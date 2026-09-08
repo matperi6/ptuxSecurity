@@ -28,16 +28,18 @@ Der Emulator nutzt xterm.js für die Terminal-Darstellung und eine lokale JavaSc
 | `hostname` | Gibt den simulierten Hostnamen aus: `ptux`. | `hostname` |
 | `uname` | Gibt den Kernel-Namen aus; `-a` zeigt zusätzliche Simulationsdaten. | `uname -a` |
 | `neofetch` | Zeigt eine kompakte Systemzusammenfassung. | `neofetch` |
+| `tracert` | Simuliert eine zufällige Offline-Route über Westerstede, IXPs und ein zufälliges Ziel. | `tracert 132.45.32.231` |
 | `which` | Gibt einen simulierten Pfad für einen Befehl aus. | `which ls` |
 | `exit` | Gibt `logout` aus; die Browser-Session bleibt geöffnet. | `exit` |
 
 ## Bedienung
 
-- Mit `Enter` wird die aktuelle Eingabe ausgeführt.
-- Mit `Pfeil hoch` und `Pfeil runter` wird durch die History navigiert.
-- `Tab` vervollständigt bekannte Befehle und einfache Datei-/Verzeichnisnamen.
-- `Strg+C` bricht die aktuelle Eingabe ab.
-- Die Quick-Commands links setzen einen Befehl direkt in das Terminal.
+- Die Weltkarte lässt sich mit Mausrad oder `+`/`−` zoomen und per Ziehen verschieben. Ab 2x Zoom erscheinen Regionsgrenzen und ab höherem Zoom Ortsmarkierungen.
+- Die Karte verwendet vereinfachte Natural-Earth-110m-Ländergrenzen aus `map-data/countries-110m.geojson`, damit Küstenlinien offline performant bleiben. Die Städte stammen aus der lokalen GeoNames-Auswahl `map-data/worldcities.json`.
+- Städte erscheinen abhängig von der Zoomstufe als Punkte. Der Städtename wird ausschließlich nach einem Klick auf den Punkt angezeigt; Punktgröße und Beschriftung bleiben auf dem Bildschirm konstant.
+- Die Stadtanzahl wird kontinuierlich über Zoomlevel 0 bis 50 an die Einwohnerzahl gekoppelt: von mindestens 10 Mio. bei Zoom 0 bis mindestens 25.000 bei Zoom 50. Das Mausrad zoomt in größeren, dynamischen Schritten; die Mausposition bleibt dabei das Zoomzentrum. Die Schaltflächen verwenden die Kartenmitte als Zoomzentrum.
+- Für die Darstellung werden nur Städte innerhalb des aktuell sichtbaren Kartenausschnitts als SVG-Elemente erzeugt. Die Stadtpunkte sind als dünne, ungefüllte Kreise gezeichnet.
+- Die Terminal-Leiste ist der Drag-Griff des frei beweglichen Fensters.
 
 ## Virtuelles Dateisystem
 

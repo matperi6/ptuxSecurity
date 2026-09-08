@@ -1,4 +1,164 @@
 (() => {
+  const mapSvg = document.querySelector('#world-map');
+  const mapViewport = document.querySelector('#map-viewport');
+  const countryLayer = document.querySelector('#country-layer');
+  const cityLayer = document.querySelector('#city-layer');
+  const routeLayer = document.querySelector('#route-layer');
+  const mapStatus = document.querySelector('#map-status');
+  const cityTooltip = document.querySelector('#city-tooltip');
+  const mapState = { zoom: 0, panX: 0, panY: 0, dragging: false, lastX: 0, lastY: 0 };
+  let cities = [];
+  const cityPopulationForZoom = (zoom) => {
+    const points = [[0, 10000000], [5, 5000000], [10, 1000000], [15, 500000], [25, 100000], [35, 50000], [45, 25000], [50, 25000]];
+    const boundedZoom = Math.max(0, Math.min(50, zoom));
+    for (let index = 1; index < points.length; index += 1) {
+      const [nextZoom, nextPopulation] = points[index];
+      if (boundedZoom <= nextZoom) {
+        const [previousZoom, previousPopulation] = points[index - 1];
+        const progress = (boundedZoom - previousZoom) / (nextZoom - previousZoom);
+        return Math.round(Math.exp(Math.log(previousPopulation) + (Math.log(nextPopulation) - Math.log(previousPopulation)) * progress));
+      }
+    }
+    return 25000;
+  };
+  const mapScale = () => 50 ** (mapState.zoom / 50);
+  const lowerBoundLatitude = (items, latitude) => {
+    let low = 0;
+    let high = items.length;
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2);
+      if (items[middle].lat < latitude) low = middle + 1;
+      else high = middle;
+    }
+    return low;
+  };
+  const visibleCityCandidates = () => {
+    const scale = mapScale();
+    const left = 500 + (0 - 500 - mapState.panX) / scale;
+    const right = 500 + (1000 - 500 - mapState.panX) / scale;
+    const top = 280 + (0 - 280 - mapState.panY) / scale;
+    const bottom = 280 + (560 - 280 - mapState.panY) / scale;
+    const margin = 8 / scale;
+    const minimumLatitude = (280 - bottom) * 180 / 560 - margin;
+    const maximumLatitude = (280 - top) * 180 / 560 + margin;
+    const minimumX = left - margin;
+    const maximumX = right + margin;
+    const minimumY = top - margin;
+    const maximumY = bottom + margin;
+    const start = lowerBoundLatitude(cities, minimumLatitude);
+    const end = lowerBoundLatitude(cities, maximumLatitude);
+    return cities.slice(start, end + 1).filter(({ population, lon, lat }) => {
+      if (population < cityPopulationForZoom(mapState.zoom)) return false;
+      const [x, y] = project(lon, lat);
+      return x >= minimumX && x <= maximumX && y >= minimumY && y <= maximumY;
+    });
+  };
+  const targetPlaces = [
+    ['Reykjavik, IS', -21.94, 64.15], ['Toronto, CA', -79.38, 43.65], ['Tokyo, JP', 139.69, 35.68],
+    ['Singapore, SG', 103.82, 1.35], ['Cape Town, ZA', 18.42, -33.93], ['São Paulo, BR', -46.63, -23.55],
+  ];
+  const project = (longitude, latitude) => [500 + longitude * (1000 / 360), 280 - latitude * (560 / 180)];
+  const svgNode = (name, attrs = {}) => { const node = document.createElementNS('http://www.w3.org/2000/svg', name); Object.entries(attrs).forEach(([key, value]) => node.setAttribute(key, value)); return node; };
+  const geometryPath = (geometry) => {
+    const polygons = geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.coordinates;
+    return polygons.map((polygon) => polygon.map((ring) => ring.map(([longitude, latitude], index) => { const [x, y] = project(longitude, latitude); return `${index ? 'L' : 'M'}${x.toFixed(2)},${y.toFixed(2)}`; }).join(' ') + ' Z').join(' ')).join(' ');
+  };
+  const drawFeatures = (layer, features, className) => {
+    layer.replaceChildren();
+    features.forEach(({ geometry }) => { if (!geometry) return; layer.appendChild(svgNode('path', { d: geometryPath(geometry), class: className })); });
+  };
+  const drawCities = () => {
+    cityLayer.replaceChildren();
+    if (!cities.length) return;
+    const visibleCities = visibleCityCandidates();
+    const markerFragment = document.createDocumentFragment();
+    visibleCities.forEach(({ name, country, lon, lat }) => {
+      const [x, y] = project(lon, lat);
+      const group = svgNode('g', { class: 'city-marker', role: 'button', tabindex: '0', 'aria-label': `${name}, ${country}` });
+      group.appendChild(svgNode('circle', { cx: x, cy: y, r: 2.8 / mapScale() }));
+      const showTooltip = (event) => {
+        event.stopPropagation();
+        const bounds = mapSvg.getBoundingClientRect();
+        cityTooltip.textContent = `${name}, ${country}`;
+        cityTooltip.style.left = `${event.clientX - bounds.left + 12}px`;
+        cityTooltip.style.top = `${event.clientY - bounds.top - 12}px`;
+        cityTooltip.hidden = false;
+      };
+      group.addEventListener('click', showTooltip);
+      group.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') showTooltip(event); });
+      markerFragment.appendChild(group);
+    });
+    cityLayer.appendChild(markerFragment);
+  };
+  const updateMapTransform = () => { const scale = mapScale(); const mapTransform = `translate(${mapState.panX} ${mapState.panY}) translate(500 280) scale(${scale}) translate(-500 -280)`; mapViewport.setAttribute('transform', mapTransform); drawCities(); };
+  const drawRoute = (target) => {
+    routeLayer.replaceChildren();
+    const route = [['Westerstede', 8.11, 53.26], ['Frankfurt DE-CIX', 8.68, 50.11], ['London LINX', -0.12, 51.51], target];
+    const points = route.map(([, longitude, latitude]) => project(longitude, latitude));
+    routeLayer.appendChild(svgNode('polyline', { points: points.map(([x, y]) => `${x},${y}`).join(' '), class: 'route-line' }));
+    route.forEach(([name, longitude, latitude], index) => { const [x, y] = project(longitude, latitude); const group = svgNode('g', { class: `route-node ${index === route.length - 1 ? 'route-target' : ''}` }); group.appendChild(svgNode('circle', { cx: x, cy: y, r: index === route.length - 1 ? 5 : 3.5 })); const label = svgNode('text', { x: x + 8, y: y - 8 }); label.textContent = name; group.appendChild(label); routeLayer.appendChild(group); });
+  };
+  const loadMap = async () => {
+    try {
+      const [countries, cityData] = await Promise.all([fetch('map-data/countries-110m.geojson').then((response) => response.json()), fetch('map-data/worldcities.json').then((response) => response.json())]);
+      cities = cityData.sort((first, second) => first.lat - second.lat);
+      drawFeatures(countryLayer, countries.features, 'country-border');
+      updateMapTransform();
+      mapStatus.textContent = `${countries.features.length} countries / cities >= ${cityPopulationForZoom(mapState.zoom).toLocaleString('de-DE')} / zoom ${mapState.zoom.toFixed(1)}x`;
+    } catch (error) { mapStatus.textContent = 'local map data unavailable'; }
+  };
+  const svgPointFromEvent = (event) => { const bounds = mapSvg.getBoundingClientRect(); return [(event.clientX - bounds.left) * (1000 / bounds.width), (event.clientY - bounds.top) * (560 / bounds.height)]; };
+  const setZoom = (value, focalPoint = [500, 280]) => {
+    const previousScale = mapScale();
+    mapState.zoom = Math.max(0, Math.min(50, value));
+    const nextScale = mapScale();
+    const [focalX, focalY] = focalPoint;
+    mapState.panX = focalX - 500 - ((focalX - 500 - mapState.panX) / previousScale) * nextScale;
+    mapState.panY = focalY - 280 - ((focalY - 280 - mapState.panY) / previousScale) * nextScale;
+    updateMapTransform();
+    mapStatus.textContent = `offline boundaries / cities >= ${cityPopulationForZoom(mapState.zoom).toLocaleString('de-DE')} / zoom ${mapState.zoom.toFixed(1)}x`;
+  };
+  document.querySelector('#zoom-in').addEventListener('click', () => setZoom(mapState.zoom + 2));
+  document.querySelector('#zoom-out').addEventListener('click', () => setZoom(mapState.zoom - 2));
+  document.querySelector('#zoom-reset').addEventListener('click', () => { mapState.panX = 0; mapState.panY = 0; setZoom(0); });
+  mapSvg.addEventListener('wheel', (event) => { event.preventDefault(); const focalPoint = svgPointFromEvent(event); const step = Math.max(2, Math.min(8, Math.abs(event.deltaY) / 40)); setZoom(mapState.zoom + (event.deltaY < 0 ? step : -step), focalPoint); }, { passive: false });
+  mapSvg.addEventListener('pointerdown', (event) => {
+    if (event.target.closest('.city-marker')) return;
+    cityTooltip.hidden = true;
+    mapState.dragging = true;
+    mapState.lastX = event.clientX;
+    mapState.lastY = event.clientY;
+    mapSvg.setPointerCapture(event.pointerId);
+  });
+  mapSvg.addEventListener('pointermove', (event) => { if (!mapState.dragging) return; const bounds = mapSvg.getBoundingClientRect(); mapState.panX += (event.clientX - mapState.lastX) * (1000 / bounds.width); mapState.panY += (event.clientY - mapState.lastY) * (560 / bounds.height); mapState.lastX = event.clientX; mapState.lastY = event.clientY; updateMapTransform(); });
+  mapSvg.addEventListener('pointerup', () => { mapState.dragging = false; });
+  loadMap();
+
+  const terminalWindow = document.querySelector('#terminal-window');
+  const terminalStage = document.querySelector('.terminal-stage');
+  const terminalDragHandle = document.querySelector('#terminal-drag-handle');
+  const terminalPosition = { dragging: false, offsetX: 0, offsetY: 0 };
+  terminalDragHandle.addEventListener('pointerdown', (event) => {
+    if (event.target.closest('button')) return;
+    const bounds = terminalStage.getBoundingClientRect();
+    terminalPosition.dragging = true;
+    terminalPosition.offsetX = event.clientX - bounds.left;
+    terminalPosition.offsetY = event.clientY - bounds.top;
+    terminalStage.style.position = 'fixed';
+    terminalStage.style.left = `${bounds.left}px`;
+    terminalStage.style.top = `${bounds.top}px`;
+    terminalStage.style.right = 'auto';
+    terminalDragHandle.setPointerCapture(event.pointerId);
+  });
+  terminalDragHandle.addEventListener('pointermove', (event) => {
+    if (!terminalPosition.dragging) return;
+    const maxLeft = Math.max(0, window.innerWidth - terminalStage.offsetWidth);
+    const maxTop = Math.max(0, window.innerHeight - terminalStage.offsetHeight);
+    terminalStage.style.left = `${Math.max(0, Math.min(maxLeft, event.clientX - terminalPosition.offsetX))}px`;
+    terminalStage.style.top = `${Math.max(0, Math.min(maxTop, event.clientY - terminalPosition.offsetY))}px`;
+  });
+  terminalDragHandle.addEventListener('pointerup', () => { terminalPosition.dragging = false; });
+
   const terminal = new Terminal({
     allowProposedApi: true,
     convertEol: true,
@@ -70,7 +230,7 @@
     },
   };
 
-  const commandNames = ['cat', 'cd', 'clear', 'date', 'echo', 'exit', 'help', 'history', 'hostname', 'ls', 'man', 'mkdir', 'neofetch', 'pwd', 'rm', 'touch', 'uname', 'whoami', 'which'];
+  const commandNames = ['cat', 'cd', 'clear', 'date', 'echo', 'exit', 'help', 'history', 'hostname', 'ls', 'man', 'mkdir', 'neofetch', 'pwd', 'rm', 'touch', 'tracert', 'uname', 'whoami', 'which'];
   const initialFileSystem = JSON.stringify(fileSystem);
   let currentDirectory = '/home/guest';
   let input = '';
@@ -168,6 +328,15 @@
     if (command === 'date') { print(new Date().toString()); return; }
     if (command === 'uname') { print(args.includes('-a') ? 'ptux 1.0.0 browser-kernel #1 SMP Web x86_64 GNU/Linux' : 'ptux'); return; }
     if (command === 'echo') { print(args.join(' ')); return; }
+    if (command === 'tracert') {
+      if (args[0] !== '132.45.32.231') { print(`${colors.orange}tracert: unknown route target${colors.reset}`); return; }
+      const target = targetPlaces[Math.floor(Math.random() * targetPlaces.length)];
+      drawRoute(target);
+      print(`${colors.blue}Tracing route to ${args[0]} [${target[0]}]${colors.reset}`);
+      print(`${colors.dim}via offline IXP topology${colors.reset}`);
+      [['Westerstede', '8.11.53.26'], ['Frankfurt DE-CIX', '80.81.192.1'], ['London LINX', '195.66.224.1'], [target[0], args[0]]].forEach(([name, address], index) => print(`  ${index + 1}   ${String(12 + index * 9).padStart(3, ' ')} ms   ${name} (${address})`));
+      return;
+    }
     if (command === 'ls') {
       const showAll = args.includes('-a') || args.includes('-la') || args.includes('-al');
       const longFormat = args.includes('-l') || showAll;

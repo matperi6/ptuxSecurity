@@ -10,48 +10,30 @@
 </head>
 <body>
   <div class="app-shell">
-    <header class="topbar">
-      <a class="brand" href="." aria-label="ptux shell Startseite">
-        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
-        <span>ptux<span class="brand-slash">/</span>shell</span>
-      </a>
-      <div class="topbar-meta">
-        <span class="status"><span class="status-dot"></span>session active</span>
-        <span class="version">v1.0.0</span>
-      </div>
-    </header>
-
     <main class="workspace">
-      <aside class="sidebar">
-        <div class="side-intro">
-          <span class="section-label">LOCAL SESSION</span>
-          <h1>Linux,<br><em>im Browser.</em></h1>
-          <p>Eine kleine Shell-Simulation für neugierige Finger und schnelle Experimente.</p>
+      <section class="map-stage" aria-label="Offline Weltkarte">
+        <div class="map-heading">
+          <span class="section-label">OFFLINE ATLAS / ROUTE MONITOR</span>
+          <strong id="map-status">loading local boundaries...</strong>
         </div>
-
-        <div class="quick-section">
-          <div class="section-heading">
-            <span class="section-label">QUICK COMMANDS</span>
-            <span class="key-hint">RUN</span>
-          </div>
-          <div class="command-list">
-            <button class="command-button" type="button" data-command="help"><span class="command-prompt">$</span><span>help</span><span class="command-arrow">↗</span></button>
-            <button class="command-button" type="button" data-command="ls -la"><span class="command-prompt">$</span><span>ls -la</span><span class="command-arrow">↗</span></button>
-            <button class="command-button" type="button" data-command="neofetch"><span class="command-prompt">$</span><span>neofetch</span><span class="command-arrow">↗</span></button>
-            <button class="command-button" type="button" data-command="cat readme.txt"><span class="command-prompt">$</span><span>cat readme.txt</span><span class="command-arrow">↗</span></button>
-          </div>
+        <svg id="world-map" viewBox="0 0 1000 560" role="img" aria-label="Linienkarte der Welt mit Netzwerkroute">
+          <g id="map-viewport">
+            <g id="country-layer"></g>
+            <g id="route-layer"></g>
+            <g id="city-layer"></g>
+          </g>
+        </svg>
+        <div id="city-tooltip" class="city-tooltip" hidden></div>
+        <div class="map-legend"><span><i class="legend-country"></i>countries</span><span><i class="legend-route"></i>active route</span></div>
+        <div class="map-controls" aria-label="Kartensteuerung">
+          <button id="zoom-in" type="button" title="Hineinzoomen">+</button>
+          <button id="zoom-out" type="button" title="Herauszoomen">−</button>
+          <button id="zoom-reset" type="button" title="Ansicht zurücksetzen">⌂</button>
         </div>
-
-        <div class="sidebar-foot">
-          <div class="fact-row"><span>HOST</span><strong>ptux.local</strong></div>
-          <div class="fact-row"><span>SHELL</span><strong>bash-like</strong></div>
-          <div class="fact-row"><span>MODE</span><strong class="offline-label"><span></span>offline</strong></div>
-        </div>
-      </aside>
-
+      </section>
       <section class="terminal-stage" aria-label="Linux Terminal Emulator">
-        <div class="terminal-window">
-          <div class="terminal-titlebar">
+        <div class="terminal-window" id="terminal-window">
+          <div class="terminal-titlebar" id="terminal-drag-handle">
             <div class="window-lights" aria-hidden="true"><span></span><span></span><span></span></div>
             <div class="terminal-title"><span class="terminal-lock">⌁</span> guest@ptux: ~</div>
             <button class="reset-button" id="reset-terminal" type="button" title="Session zurücksetzen">RESET <span>↻</span></button>
