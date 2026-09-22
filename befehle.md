@@ -31,15 +31,17 @@ Der Emulator nutzt xterm.js für die Terminal-Darstellung und eine lokale JavaSc
 | `tracert` | Simuliert eine zufällige Offline-Route über Westerstede, IXPs und ein zufälliges Ziel. | `tracert 132.45.32.231` |
 | `which` | Gibt einen simulierten Pfad für einen Befehl aus. | `which ls` |
 | `exit` | Gibt `logout` aus; die Browser-Session bleibt geöffnet. | `exit` |
+| `installserver` | Simuliert die Installation eines ptuXOS-Servers an einem verfügbaren deutschen Rechenzentrum. | `installserver web01 ptuXOS München 51.68.33.30` |
+| `addsuperuser` | Fügt einen simulierten Benutzer zur sudo-Gruppe hinzu. | `addsuperuser admin geheim` |
 
 ## Bedienung
 
-- Die Weltkarte lässt sich mit Mausrad oder `+`/`−` zoomen und per Ziehen verschieben. Ab 2x Zoom erscheinen Regionsgrenzen und ab höherem Zoom Ortsmarkierungen.
-- Die Karte verwendet vereinfachte Natural-Earth-110m-Ländergrenzen aus `map-data/countries-110m.geojson`, damit Küstenlinien offline performant bleiben. Die Städte stammen aus der lokalen GeoNames-Auswahl `map-data/worldcities.json`.
-- Städte erscheinen abhängig von der Zoomstufe als Punkte. Der Städtename wird ausschließlich nach einem Klick auf den Punkt angezeigt; Punktgröße und Beschriftung bleiben auf dem Bildschirm konstant.
-- Die Stadtanzahl wird kontinuierlich über Zoomlevel 0 bis 50 an die Einwohnerzahl gekoppelt: von mindestens 10 Mio. bei Zoom 0 bis mindestens 25.000 bei Zoom 50. Das Mausrad zoomt in größeren, dynamischen Schritten; die Mausposition bleibt dabei das Zoomzentrum. Die Schaltflächen verwenden die Kartenmitte als Zoomzentrum.
-- Für die Darstellung werden nur Städte innerhalb des aktuell sichtbaren Kartenausschnitts als SVG-Elemente erzeugt. Die Stadtpunkte sind als dünne, ungefüllte Kreise gezeichnet.
+- Die Weltkarte lässt sich mit Mausrad oder `+`/`−` zoomen und per Ziehen verschieben.
+- Die Karte verwendet vereinfachte Natural-Earth-110m-Ländergrenzen aus `map-data/countries-110m.geojson`, damit Küstenlinien offline performant bleiben.
+- Das Mausrad zoomt in dynamischen Schritten; die Mausposition bleibt dabei das Zoomzentrum. Die Schaltflächen verwenden die Kartenmitte als Zoomzentrum.
 - Die Terminal-Leiste ist der Drag-Griff des frei beweglichen Fensters.
+
+`installserver` verwendet die Syntax `installserver <hostname> <os> <stadt> <ipadresse>`. Stadt und IP müssen als verfügbare Rechenzentrum-Kombination angegeben werden. Die zehn verfügbaren Standorte und belegten Server werden im Browser in `localStorage` gespeichert.
 
 ## Virtuelles Dateisystem
 

@@ -11,41 +11,49 @@
 <body>
   <div class="app-shell">
     <main class="workspace">
-      <section class="map-stage" aria-label="Offline Weltkarte">
-        <div class="map-heading">
-          <span class="section-label">OFFLINE ATLAS / ROUTE MONITOR</span>
-          <strong id="map-status">loading local boundaries...</strong>
-        </div>
-        <svg id="world-map" viewBox="0 0 1000 560" role="img" aria-label="Linienkarte der Welt mit Netzwerkroute">
-          <g id="map-viewport">
-            <g id="country-layer"></g>
-            <g id="route-layer"></g>
-            <g id="city-layer"></g>
-          </g>
-        </svg>
-        <div id="city-tooltip" class="city-tooltip" hidden></div>
-        <div class="map-legend"><span><i class="legend-country"></i>countries</span><span><i class="legend-route"></i>active route</span></div>
-        <div class="map-controls" aria-label="Kartensteuerung">
-          <button id="zoom-in" type="button" title="Hineinzoomen">+</button>
-          <button id="zoom-out" type="button" title="Herauszoomen">−</button>
-          <button id="zoom-reset" type="button" title="Ansicht zurücksetzen">⌂</button>
-        </div>
+      <section class="column column-left" aria-label="Informationen">
+        <section class="panel panel-info">
+          <h2>Infos</h2>
+          <div id="server-info" class="server-info" aria-live="polite"><span class="empty-state">Noch kein Server installiert.</span></div>
+        </section>
+        <section class="panel panel-code">
+          <h2>Code</h2>
+          <div id="code-output" class="code-output" aria-live="polite" aria-label="Simulierter Installationscode"></div>
+        </section>
       </section>
-      <section class="terminal-stage" aria-label="Linux Terminal Emulator">
-        <div class="terminal-window" id="terminal-window">
-          <div class="terminal-titlebar" id="terminal-drag-handle">
-            <div class="window-lights" aria-hidden="true"><span></span><span></span><span></span></div>
-            <div class="terminal-title"><span class="terminal-lock">⌁</span> guest@ptux: ~</div>
-            <button class="reset-button" id="reset-terminal" type="button" title="Session zurücksetzen">RESET <span>↻</span></button>
+      <section class="column column-center">
+        <section class="panel panel-route" aria-label="Route Monitor">
+          <h2>Route Monitor</h2>
+          <div class="map-stage">
+            <div class="map-heading">
+              <span class="section-label">OFFLINE ATLAS / ROUTE MONITOR</span>
+              <strong id="map-status">loading local boundaries...</strong>
+            </div>
+            <svg id="world-map" viewBox="0 0 1000 560" role="img" aria-label="Linienkarte der Welt mit Netzwerkroute">
+              <g id="map-viewport">
+                <g id="country-layer"></g>
+                <g id="route-layer"></g>
+                <g id="server-layer"></g>
+              </g>
+            </svg>
+            <div class="map-legend"><span><i class="legend-country"></i>countries</span><span><i class="legend-route"></i>active route</span></div>
+            <div class="map-controls" aria-label="Kartensteuerung">
+              <button id="zoom-in" type="button" title="Hineinzoomen">+</button>
+              <button id="zoom-out" type="button" title="Herauszoomen">−</button>
+              <button id="zoom-reset" type="button" title="Ansicht zurücksetzen">⌂</button>
+            </div>
           </div>
-          <div class="terminal-body" id="terminal" role="application" aria-label="Interaktives Linux-Terminal"></div>
-        </div>
-        <div class="terminal-footer">
-          <span><kbd>↑</kbd><kbd>↓</kbd> history</span>
-          <span><kbd>Tab</kbd> autocomplete</span>
-          <span class="footer-grow"></span>
-          <a href="befehle.md">Befehle <span>↗</span></a>
-        </div>
+        </section>
+        <section class="panel panel-terminal" aria-label="Linux Terminal Emulator">
+          <div class="terminal-window">
+            <div class="terminal-body" id="terminal" role="application" aria-label="Interaktives Linux-Terminal"></div>
+          </div>
+        </section>
+      </section>
+      <section class="column column-right" aria-label="Systemstatus">
+        <section class="panel panel-ai"><h2>PTuX-KI</h2></section>
+        <section class="panel panel-safe"><h2>IP-Safe</h2></section>
+        <section class="panel panel-warnings"><h2>Warnungen</h2></section>
       </section>
     </main>
   </div>

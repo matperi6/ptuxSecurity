@@ -2,57 +2,36 @@
   const mapSvg = document.querySelector('#world-map');
   const mapViewport = document.querySelector('#map-viewport');
   const countryLayer = document.querySelector('#country-layer');
-  const cityLayer = document.querySelector('#city-layer');
   const routeLayer = document.querySelector('#route-layer');
+  const serverLayer = document.querySelector('#server-layer');
   const mapStatus = document.querySelector('#map-status');
-  const cityTooltip = document.querySelector('#city-tooltip');
+  const serverInfo = document.querySelector('#server-info');
+  const codeOutput = document.querySelector('#code-output');
   const mapState = { zoom: 0, panX: 0, panY: 0, dragging: false, lastX: 0, lastY: 0 };
-  let cities = [];
-  const cityPopulationForZoom = (zoom) => {
-    const points = [[0, 10000000], [5, 5000000], [10, 1000000], [15, 500000], [25, 100000], [35, 50000], [45, 25000], [50, 25000]];
-    const boundedZoom = Math.max(0, Math.min(50, zoom));
-    for (let index = 1; index < points.length; index += 1) {
-      const [nextZoom, nextPopulation] = points[index];
-      if (boundedZoom <= nextZoom) {
-        const [previousZoom, previousPopulation] = points[index - 1];
-        const progress = (boundedZoom - previousZoom) / (nextZoom - previousZoom);
-        return Math.round(Math.exp(Math.log(previousPopulation) + (Math.log(nextPopulation) - Math.log(previousPopulation)) * progress));
-      }
-    }
-    return 25000;
-  };
+  const serverStorageKey = 'ptuxSecurity.servers';
+  const historyStorageKey = 'ptuxSecurity.history';
+  const osImagesStorageKey = 'ptuxSecurity.osImages';
+  const availableDatacentersStorageKey = 'ptuxSecurity.availableDatacenters';
+  const availableOsImages = ['ptuXOS'];
+  const deutsche_rechenzentren = [
+    { name: 'Frankfurt', lon: 8.68213, lat: 50.11092 },
+    { name: 'Berlin', lon: 13.41053, lat: 52.52437 },
+    { name: 'Hamburg', lon: 9.99302, lat: 53.55073 },
+    { name: 'München', lon: 11.57549, lat: 48.13743 },
+    { name: 'Düsseldorf', lon: 6.77927, lat: 51.22319 },
+    { name: 'Köln', lon: 6.95, lat: 50.93333 },
+    { name: 'Leipzig', lon: 12.37129, lat: 51.33962 },
+    { name: 'Nürnberg', lon: 11.07752, lat: 49.45421 },
+    { name: 'Stuttgart', lon: 9.17702, lat: 48.78232 },
+    { name: 'Hannover', lon: 9.73322, lat: 52.37052 },
+  ];
+  const datacenterIps = ['45.83.12.10', '46.101.22.20', '51.68.33.30', '80.158.44.40', '91.65.55.50', '138.201.66.60', '176.9.77.70', '185.12.88.80', '193.175.99.90', '212.201.110.100'];
+  let cityData = [];
+  let installedServers = [];
+  let availableDatacenters = [];
+  const installationTimers = new Set();
+  let mapDataReady;
   const mapScale = () => 50 ** (mapState.zoom / 50);
-  const lowerBoundLatitude = (items, latitude) => {
-    let low = 0;
-    let high = items.length;
-    while (low < high) {
-      const middle = Math.floor((low + high) / 2);
-      if (items[middle].lat < latitude) low = middle + 1;
-      else high = middle;
-    }
-    return low;
-  };
-  const visibleCityCandidates = () => {
-    const scale = mapScale();
-    const left = 500 + (0 - 500 - mapState.panX) / scale;
-    const right = 500 + (1000 - 500 - mapState.panX) / scale;
-    const top = 280 + (0 - 280 - mapState.panY) / scale;
-    const bottom = 280 + (560 - 280 - mapState.panY) / scale;
-    const margin = 8 / scale;
-    const minimumLatitude = (280 - bottom) * 180 / 560 - margin;
-    const maximumLatitude = (280 - top) * 180 / 560 + margin;
-    const minimumX = left - margin;
-    const maximumX = right + margin;
-    const minimumY = top - margin;
-    const maximumY = bottom + margin;
-    const start = lowerBoundLatitude(cities, minimumLatitude);
-    const end = lowerBoundLatitude(cities, maximumLatitude);
-    return cities.slice(start, end + 1).filter(({ population, lon, lat }) => {
-      if (population < cityPopulationForZoom(mapState.zoom)) return false;
-      const [x, y] = project(lon, lat);
-      return x >= minimumX && x <= maximumX && y >= minimumY && y <= maximumY;
-    });
-  };
   const targetPlaces = [
     ['Reykjavik, IS', -21.94, 64.15], ['Toronto, CA', -79.38, 43.65], ['Tokyo, JP', 139.69, 35.68],
     ['Singapore, SG', 103.82, 1.35], ['Cape Town, ZA', 18.42, -33.93], ['São Paulo, BR', -46.63, -23.55],
@@ -67,30 +46,17 @@
     layer.replaceChildren();
     features.forEach(({ geometry }) => { if (!geometry) return; layer.appendChild(svgNode('path', { d: geometryPath(geometry), class: className })); });
   };
-  const drawCities = () => {
-    cityLayer.replaceChildren();
-    if (!cities.length) return;
-    const visibleCities = visibleCityCandidates();
-    const markerFragment = document.createDocumentFragment();
-    visibleCities.forEach(({ name, country, lon, lat }) => {
-      const [x, y] = project(lon, lat);
-      const group = svgNode('g', { class: 'city-marker', role: 'button', tabindex: '0', 'aria-label': `${name}, ${country}` });
-      group.appendChild(svgNode('circle', { cx: x, cy: y, r: 2.8 / mapScale() }));
-      const showTooltip = (event) => {
-        event.stopPropagation();
-        const bounds = mapSvg.getBoundingClientRect();
-        cityTooltip.textContent = `${name}, ${country}`;
-        cityTooltip.style.left = `${event.clientX - bounds.left + 12}px`;
-        cityTooltip.style.top = `${event.clientY - bounds.top - 12}px`;
-        cityTooltip.hidden = false;
-      };
-      group.addEventListener('click', showTooltip);
-      group.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') showTooltip(event); });
-      markerFragment.appendChild(group);
+  const updateMapTransform = () => { const scale = mapScale(); const mapTransform = `translate(${mapState.panX} ${mapState.panY}) translate(500 280) scale(${scale}) translate(-500 -280)`; mapViewport.setAttribute('transform', mapTransform); drawServerMarkers(); };
+  const drawServerMarkers = () => {
+    serverLayer.replaceChildren();
+    installedServers.forEach((server) => {
+      if (!server.datacenter) return;
+      const [x, y] = project(server.datacenter.lon, server.datacenter.lat);
+      const marker = svgNode('g', { class: 'server-marker', 'aria-label': `Serverstandort ${server.hostname} in ${server.datacenter.name}` });
+      marker.appendChild(svgNode('circle', { cx: x, cy: y, r: 7 / mapScale() }));
+      serverLayer.appendChild(marker);
     });
-    cityLayer.appendChild(markerFragment);
   };
-  const updateMapTransform = () => { const scale = mapScale(); const mapTransform = `translate(${mapState.panX} ${mapState.panY}) translate(500 280) scale(${scale}) translate(-500 -280)`; mapViewport.setAttribute('transform', mapTransform); drawCities(); };
   const drawRoute = (target) => {
     routeLayer.replaceChildren();
     const route = [['Westerstede', 8.11, 53.26], ['Frankfurt DE-CIX', 8.68, 50.11], ['London LINX', -0.12, 51.51], target];
@@ -100,12 +66,41 @@
   };
   const loadMap = async () => {
     try {
-      const [countries, cityData] = await Promise.all([fetch('map-data/countries-110m.geojson').then((response) => response.json()), fetch('map-data/worldcities.json').then((response) => response.json())]);
-      cities = cityData.sort((first, second) => first.lat - second.lat);
+      const [countries, cities] = await Promise.all([
+        fetch('map-data/countries-110m.geojson').then((response) => response.json()),
+        fetch('map-data/worldcities.json').then((response) => response.json()),
+      ]);
+      cityData = cities;
+      loadServers();
+      availableDatacenters = availableDatacenters.filter((datacenter) => !installedServers.some((server) => server.ip === datacenter.ip));
+      localStorage.setItem(availableDatacentersStorageKey, JSON.stringify(availableDatacenters));
+      showServerInfo();
       drawFeatures(countryLayer, countries.features, 'country-border');
       updateMapTransform();
-      mapStatus.textContent = `${countries.features.length} countries / cities >= ${cityPopulationForZoom(mapState.zoom).toLocaleString('de-DE')} / zoom ${mapState.zoom.toFixed(1)}x`;
+      mapStatus.textContent = `${countries.features.length} countries / zoom ${mapState.zoom.toFixed(1)}x`;
     } catch (error) { mapStatus.textContent = 'local map data unavailable'; }
+  };
+  mapDataReady = loadMap();
+  const isValidIp = (value) => {
+    if (typeof value !== 'string') return false;
+    const octets = value.split('.');
+    return octets.length === 4 && octets.every((octet) => /^(0|[1-9]\d{0,2})$/.test(octet) && Number(octet) <= 255);
+  };
+  const loadAvailableDatacenters = () => {
+    try {
+      const storedDatacenters = JSON.parse(localStorage.getItem(availableDatacentersStorageKey) || '[]');
+      availableDatacenters = Array.isArray(storedDatacenters) ? storedDatacenters.filter((datacenter) => deutsche_rechenzentren.some((validDatacenter) => validDatacenter.name === datacenter.name && validDatacenter.lon === datacenter.lon && validDatacenter.lat === datacenter.lat && datacenter.ip === datacenter.ip)) : [];
+    } catch (error) {
+      availableDatacenters = [];
+    }
+    if (!availableDatacenters.length) {
+      availableDatacenters = deutsche_rechenzentren.map((datacenter, index) => ({ ...datacenter, ip: datacenterIps[index] }));
+    }
+    localStorage.setItem(availableDatacentersStorageKey, JSON.stringify(availableDatacenters));
+  };
+  const initializeAppData = () => {
+    localStorage.setItem(osImagesStorageKey, JSON.stringify(availableOsImages));
+    loadAvailableDatacenters();
   };
   const svgPointFromEvent = (event) => { const bounds = mapSvg.getBoundingClientRect(); return [(event.clientX - bounds.left) * (1000 / bounds.width), (event.clientY - bounds.top) * (560 / bounds.height)]; };
   const setZoom = (value, focalPoint = [500, 280]) => {
@@ -116,15 +111,13 @@
     mapState.panX = focalX - 500 - ((focalX - 500 - mapState.panX) / previousScale) * nextScale;
     mapState.panY = focalY - 280 - ((focalY - 280 - mapState.panY) / previousScale) * nextScale;
     updateMapTransform();
-    mapStatus.textContent = `offline boundaries / cities >= ${cityPopulationForZoom(mapState.zoom).toLocaleString('de-DE')} / zoom ${mapState.zoom.toFixed(1)}x`;
+    mapStatus.textContent = `offline boundaries / zoom ${mapState.zoom.toFixed(1)}x`;
   };
   document.querySelector('#zoom-in').addEventListener('click', () => setZoom(mapState.zoom + 2));
   document.querySelector('#zoom-out').addEventListener('click', () => setZoom(mapState.zoom - 2));
   document.querySelector('#zoom-reset').addEventListener('click', () => { mapState.panX = 0; mapState.panY = 0; setZoom(0); });
   mapSvg.addEventListener('wheel', (event) => { event.preventDefault(); const focalPoint = svgPointFromEvent(event); const step = Math.max(2, Math.min(8, Math.abs(event.deltaY) / 40)); setZoom(mapState.zoom + (event.deltaY < 0 ? step : -step), focalPoint); }, { passive: false });
   mapSvg.addEventListener('pointerdown', (event) => {
-    if (event.target.closest('.city-marker')) return;
-    cityTooltip.hidden = true;
     mapState.dragging = true;
     mapState.lastX = event.clientX;
     mapState.lastY = event.clientY;
@@ -132,33 +125,6 @@
   });
   mapSvg.addEventListener('pointermove', (event) => { if (!mapState.dragging) return; const bounds = mapSvg.getBoundingClientRect(); mapState.panX += (event.clientX - mapState.lastX) * (1000 / bounds.width); mapState.panY += (event.clientY - mapState.lastY) * (560 / bounds.height); mapState.lastX = event.clientX; mapState.lastY = event.clientY; updateMapTransform(); });
   mapSvg.addEventListener('pointerup', () => { mapState.dragging = false; });
-  loadMap();
-
-  const terminalWindow = document.querySelector('#terminal-window');
-  const terminalStage = document.querySelector('.terminal-stage');
-  const terminalDragHandle = document.querySelector('#terminal-drag-handle');
-  const terminalPosition = { dragging: false, offsetX: 0, offsetY: 0 };
-  terminalDragHandle.addEventListener('pointerdown', (event) => {
-    if (event.target.closest('button')) return;
-    const bounds = terminalStage.getBoundingClientRect();
-    terminalPosition.dragging = true;
-    terminalPosition.offsetX = event.clientX - bounds.left;
-    terminalPosition.offsetY = event.clientY - bounds.top;
-    terminalStage.style.position = 'fixed';
-    terminalStage.style.left = `${bounds.left}px`;
-    terminalStage.style.top = `${bounds.top}px`;
-    terminalStage.style.right = 'auto';
-    terminalDragHandle.setPointerCapture(event.pointerId);
-  });
-  terminalDragHandle.addEventListener('pointermove', (event) => {
-    if (!terminalPosition.dragging) return;
-    const maxLeft = Math.max(0, window.innerWidth - terminalStage.offsetWidth);
-    const maxTop = Math.max(0, window.innerHeight - terminalStage.offsetHeight);
-    terminalStage.style.left = `${Math.max(0, Math.min(maxLeft, event.clientX - terminalPosition.offsetX))}px`;
-    terminalStage.style.top = `${Math.max(0, Math.min(maxTop, event.clientY - terminalPosition.offsetY))}px`;
-  });
-  terminalDragHandle.addEventListener('pointerup', () => { terminalPosition.dragging = false; });
-
   const terminal = new Terminal({
     allowProposedApi: true,
     convertEol: true,
@@ -186,7 +152,11 @@
   });
   const fitAddon = new FitAddon.FitAddon();
   terminal.loadAddon(fitAddon);
-  terminal.open(document.querySelector('#terminal'));
+  const terminalBody = document.querySelector('#terminal');
+  terminal.open(terminalBody);
+  const fitTerminal = () => window.requestAnimationFrame(() => fitAddon.fit());
+  const terminalResizeObserver = new ResizeObserver(fitTerminal);
+  terminalResizeObserver.observe(terminalBody);
 
   const colors = {
     green: '\x1b[38;2;180;211;107m',
@@ -230,7 +200,7 @@
     },
   };
 
-  const commandNames = ['cat', 'cd', 'clear', 'date', 'echo', 'exit', 'help', 'history', 'hostname', 'ls', 'man', 'mkdir', 'neofetch', 'pwd', 'rm', 'touch', 'tracert', 'uname', 'whoami', 'which'];
+  const commandNames = ['addsuperuser', 'cat', 'cd', 'clear', 'date', 'echo', 'exit', 'help', 'history', 'hostname', 'installserver', 'ls', 'man', 'mkdir', 'neofetch', 'pwd', 'reset', 'rm', 'touch', 'tracert', 'uname', 'whoami', 'which'];
   const initialFileSystem = JSON.stringify(fileSystem);
   let currentDirectory = '/home/guest';
   let input = '';
@@ -246,6 +216,185 @@
   const prompt = () => `${colors.green}guest${colors.reset}@${colors.blue}ptux${colors.reset}:${colors.brightGreen}${promptPath()}${colors.reset}$ `;
   const writePrompt = () => terminal.write(`\r\n${prompt()}`);
   const print = (text = '') => text.split('\n').forEach((line) => terminal.writeln(line));
+  const appendCodeLine = (text, kind = 'code') => {
+    const line = document.createElement('div');
+    line.className = `code-line ${kind}`;
+    line.textContent = text;
+    codeOutput.appendChild(line);
+    const lineHeight = parseFloat(getComputedStyle(codeOutput).lineHeight) || 16;
+    const maxLines = Math.max(1, Math.floor(codeOutput.clientHeight / lineHeight));
+    while (codeOutput.children.length > maxLines) codeOutput.firstElementChild.remove();
+  };
+  const saveServers = () => localStorage.setItem(serverStorageKey, JSON.stringify(installedServers));
+  const saveHistory = () => localStorage.setItem(historyStorageKey, JSON.stringify(history));
+  const loadHistory = () => {
+    try {
+      const storedHistory = JSON.parse(localStorage.getItem(historyStorageKey) || '[]');
+      history = Array.isArray(storedHistory) ? storedHistory.filter((item) => typeof item === 'string').slice(-20) : [];
+    } catch (error) {
+      history = [];
+    }
+    historyIndex = history.length;
+  };
+  const loadServers = () => {
+    try {
+      const storedServers = JSON.parse(localStorage.getItem(serverStorageKey) || '[]');
+      installedServers = Array.isArray(storedServers) ? storedServers.map((server) => {
+        if (server.datacenter) return server;
+        const legacyCity = server.city;
+        const datacenter = legacyCity ? findDatacenter(legacyCity.name) : null;
+        return datacenter ? { ...server, datacenter: { ...datacenter, ip: server.ip } } : null;
+      }).filter(Boolean) : [];
+      saveServers();
+    } catch (error) {
+      installedServers = [];
+    }
+  };
+  const showServerInfo = () => {
+    serverInfo.replaceChildren();
+    if (!installedServers.length) {
+      serverInfo.innerHTML = '<span class="empty-state">Noch kein Server installiert.</span>';
+      return;
+    }
+    installedServers.forEach((server) => {
+      const details = document.createElement('div');
+      details.className = 'server-entry';
+      const summary = document.createElement('div');
+      summary.textContent = `${server.hostname} - ${server.os} - ${server.datacenter?.name || 'nicht gefunden'} - ${server.ip}`;
+      const coordinates = document.createElement('div');
+      coordinates.textContent = `Lat: ${server.datacenter ? server.datacenter.lat.toFixed(5) : '-'} - Lon: ${server.datacenter ? server.datacenter.lon.toFixed(5) : '-'}`;
+      details.append(summary, coordinates);
+      serverInfo.appendChild(details);
+    });
+  };
+  const findDatacenter = (name) => deutsche_rechenzentren.find((datacenter) => datacenter.name.toLocaleLowerCase() === name.toLocaleLowerCase());
+  const isValidHostname = (value) => typeof value === 'string' && /^(?=.{1,63}$)[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/.test(value);
+  const availableDatacenterLabels = () => availableDatacenters.map((datacenter) => `${datacenter.name} (${datacenter.ip})`);
+  const printInstallServerOptions = () => {
+    print(`${colors.orange}Erlaubte OS-Images: ${availableOsImages.join(', ') || 'keine'}${colors.reset}`);
+    print(`${colors.orange}Verfügbare Rechenzentren: ${availableDatacenterLabels().join(', ') || 'keine'}${colors.reset}`);
+  };
+  const printInstallServerError = (message) => {
+    print(`${colors.orange}${message}${colors.reset}`);
+    printInstallServerOptions();
+  };
+  const validateInstallServer = async ([hostname, os, cityName, ip]) => {
+    if (!availableOsImages.includes(os)) {
+      printInstallServerError(`installserver: OS-Image '${os}' ist nicht verfügbar.`);
+      return null;
+    }
+    if (!isValidIp(ip)) {
+      printInstallServerError(`installserver: '${ip}' ist keine gültige IPv4-Adresse.`);
+      return null;
+    }
+    const datacenter = availableDatacenters.find((entry) => entry.name.toLocaleLowerCase() === cityName.toLocaleLowerCase() && entry.ip === ip);
+    if (!datacenter) {
+      printInstallServerError(`installserver: Rechenzentrum '${cityName}' mit IP-Adresse '${ip}' ist nicht verfügbar.`);
+      return null;
+    }
+    if (!isValidHostname(hostname)) {
+      printInstallServerError(`installserver: Hostname '${hostname}' ist ungültig. Erlaubt sind Buchstaben, Zahlen und Bindestriche.`);
+      return null;
+    }
+    if (installedServers.some((server) => server.hostname.toLocaleLowerCase() === hostname.toLocaleLowerCase() || server.ip === ip)) {
+      printInstallServerError(`installserver: Server mit Hostname '${hostname}' oder Rechenzentrum '${cityName}' wurde bereits installiert.`);
+      return null;
+    }
+    const validDatacenter = findDatacenter(cityName);
+    if (!validDatacenter) {
+      printInstallServerError(`installserver: Stadt '${cityName}' ist kein zulässiges deutsches Rechenzentrum.`);
+      return null;
+    }
+    return { ...validDatacenter, ip };
+  };
+  const installServer = async (args) => {
+    if (args.length !== 4) {
+      printInstallServerError('installserver: usage: installserver <hostname> <os> <stadt> <ipadresse>');
+      return;
+    }
+    const [hostname, os, cityName, ip] = args;
+    const datacenter = await validateInstallServer(args);
+    if (!datacenter) return;
+    availableDatacenters = availableDatacenters.filter((entry) => !(entry.name === datacenter.name && entry.ip === datacenter.ip));
+    localStorage.setItem(availableDatacentersStorageKey, JSON.stringify(availableDatacenters));
+    const script = [
+      '#!/usr/bin/env ptuXOS-installer',
+      `echo "PXE boot: ${hostname}"`,
+      `set server_ip=${ip}`,
+      `set datacenter=${datacenter.name}`,
+      `set hostname=${hostname}`,
+      'pxe-client --discover --interface eth0',
+      'pxe-client --load kernel.ptux',
+      'pxe-client --load initrd.ptux',
+      `ptux-install --target /dev/sda --os ${os}`,
+      'ptux-install --partition-layout guided',
+      'ptux-install --network dhcp --offline',
+      `ptux-install --hostname ${hostname}`,
+      'ptux-install --enable ssh',
+      'ptux-install --write-bootloader',
+      'system-image --verify ptuXOS-base.img',
+      'system-image --extract ptuXOS-base.img /target',
+      'configure-locale de_DE.UTF-8',
+      'configure-timezone Europe/Berlin',
+      'configure-network --apply',
+      'service ssh enable',
+      'service network restart',
+      'sync /target/boot',
+      'umount /target',
+      'reboot --target-server',
+    ];
+    let step = 0;
+    appendCodeLine(`[installserver] PXE-Installation gestartet: ${hostname}`, 'output');
+    const completeInstallation = async () => {
+      installedServers.push({ os, ip, hostname, datacenter });
+      saveServers();
+      showServerInfo();
+      updateMapTransform();
+      appendCodeLine(`[installserver] Installation abgeschlossen: ${hostname}`, 'output');
+    };
+    const installationTimer = window.setInterval(() => {
+      appendCodeLine(script[step++]);
+      if (step === script.length) {
+        window.clearInterval(installationTimer);
+        installationTimers.delete(installationTimer);
+        completeInstallation();
+      }
+    }, 500);
+    installationTimers.add(installationTimer);
+    print(`${colors.green}Remote-Installation wurde gestartet${colors.reset}`);
+  };
+  const addSuperuser = (args) => {
+    if (args.length !== 2) {
+      print(`${colors.orange}addsuperuser: usage: addsuperuser <username> <password>${colors.reset}`);
+      return;
+    }
+    const [username, password] = args;
+    appendCodeLine(`useradd ${username}`);
+    appendCodeLine(`passwd ${username} ${password}`);
+    appendCodeLine(`usermod -aG sudo ${username}`);
+    print(`useradd: user '${username}' created`);
+    print(`passwd: password updated successfully for ${username}`);
+    print(`${colors.green}User '${username}' wurde der sudo-Gruppe hinzugefügt.${colors.reset}`);
+  };
+  const resetSimulation = () => {
+    installationTimers.forEach((timer) => window.clearInterval(timer));
+    installationTimers.clear();
+    localStorage.clear();
+    initializeAppData();
+    installedServers = [];
+    showServerInfo();
+    serverLayer.replaceChildren();
+    codeOutput.replaceChildren();
+    Object.keys(fileSystem.entries).forEach((key) => delete fileSystem.entries[key]);
+    Object.assign(fileSystem, JSON.parse(initialFileSystem));
+    currentDirectory = '/home/guest';
+    input = '';
+    history = [];
+    historyIndex = 0;
+    localStorage.removeItem(historyStorageKey);
+    terminal.clear();
+    print(`${colors.green}Simulation zurückgesetzt. localStorage wurde geleert.${colors.reset}`);
+  };
 
   function resolvePath(path = '~') {
     let target = path;
@@ -298,6 +447,7 @@
   }
 
   function execute(commandLine) {
+    if (commandLine.trim().toLowerCase() === 'reset simulation') { resetSimulation(); return; }
     const args = parseArgs(commandLine);
     const command = args.shift();
     if (!command) return;
@@ -320,8 +470,13 @@
       print(`  ${colors.green}neofetch${colors.reset}    show system summary`);
       print(`  ${colors.green}history${colors.reset}     show command history`);
       print(`  ${colors.green}man${colors.reset}         open a compact manual`);
+      print(`  ${colors.green}installserver${colors.reset} install a simulated ptuXOS server`);
+      print(`  ${colors.green}addsuperuser${colors.reset}  create a simulated sudo user`);
+      print(`  ${colors.green}reset simulation${colors.reset} clear the complete simulation state`);
       return;
     }
+    if (command === 'installserver') return installServer(args);
+    if (command === 'addsuperuser') { addSuperuser(args); return; }
     if (command === 'pwd') { print(currentDirectory); return; }
     if (command === 'whoami') { print('guest'); return; }
     if (command === 'hostname') { print('ptux'); return; }
@@ -412,8 +567,17 @@
     if (commandLine) {
       history = history.filter((item) => item !== commandLine);
       history.push(commandLine);
+      history = history.slice(-20);
+      saveHistory();
       historyIndex = history.length;
-      execute(commandLine);
+      const execution = execute(commandLine);
+      if (execution?.then) {
+        execution.then(() => {
+          input = '';
+          writePrompt();
+        });
+        return;
+      }
     }
     input = '';
     writePrompt();
@@ -453,14 +617,18 @@
     input = '';
     history = [];
     historyIndex = 0;
+    installedServers = [];
+    localStorage.removeItem(serverStorageKey);
+    initializeAppData();
+    showServerInfo();
+    codeOutput.replaceChildren();
+    serverLayer.replaceChildren();
     terminal.clear();
     boot();
   }
 
   function boot() {
-    terminal.write(`${colors.green}ptux${colors.reset} ${colors.dim}// browser shell${colors.reset}\r\n`);
-    terminal.write(`${colors.dim}Linux-like environment ready. No network. No root. Just a prompt.${colors.reset}\r\n\r\n`);
-    terminal.write(prompt());
+     terminal.write(prompt());
   }
 
   document.querySelectorAll('[data-command]').forEach((button) => button.addEventListener('click', () => {
@@ -469,8 +637,9 @@
     submit();
     terminal.focus();
   }));
-  document.querySelector('#reset-terminal').addEventListener('click', reset);
-  window.addEventListener('resize', () => fitAddon.fit());
-  fitAddon.fit();
+  window.addEventListener('resize', fitTerminal);
+  fitTerminal();
+  initializeAppData();
+  loadHistory();
   boot();
 })();
