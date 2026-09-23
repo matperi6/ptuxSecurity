@@ -4,7 +4,6 @@
   const countryLayer = document.querySelector('#country-layer');
   const routeLayer = document.querySelector('#route-layer');
   const serverLayer = document.querySelector('#server-layer');
-  const mapStatus = document.querySelector('#map-status');
   const serverInfo = document.querySelector('#server-info');
   const codeOutput = document.querySelector('#code-output');
   const mapState = { zoom: 0, panX: 0, panY: 0, dragging: false, lastX: 0, lastY: 0 };
@@ -77,8 +76,7 @@
       showServerInfo();
       drawFeatures(countryLayer, countries.features, 'country-border');
       updateMapTransform();
-      mapStatus.textContent = `${countries.features.length} countries / zoom ${mapState.zoom.toFixed(1)}x`;
-    } catch (error) { mapStatus.textContent = 'local map data unavailable'; }
+    } catch (error) { }
   };
   mapDataReady = loadMap();
   const isValidIp = (value) => {
@@ -111,7 +109,6 @@
     mapState.panX = focalX - 500 - ((focalX - 500 - mapState.panX) / previousScale) * nextScale;
     mapState.panY = focalY - 280 - ((focalY - 280 - mapState.panY) / previousScale) * nextScale;
     updateMapTransform();
-    mapStatus.textContent = `offline boundaries / zoom ${mapState.zoom.toFixed(1)}x`;
   };
   document.querySelector('#zoom-in').addEventListener('click', () => setZoom(mapState.zoom + 2));
   document.querySelector('#zoom-out').addEventListener('click', () => setZoom(mapState.zoom - 2));
