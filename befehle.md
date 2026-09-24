@@ -21,11 +21,11 @@ Der Emulator nutzt xterm.js für die Terminal-Darstellung und eine lokale JavaSc
 | `help` | Zeigt die integrierte Befehlsübersicht. | `help` |
 | `man` | Öffnet eine kurze simulierte Handbuchseite. | `man ls` |
 | `history` | Zeigt die bisher eingegebenen Befehle der Session. | `history` |
-| `echo` | Gibt Text im Terminal aus. | `echo Hallo ptux` |
+| `echo` | Gibt Text im Terminal aus. | `echo Hallo localpc` |
 | `clear` | Leert den sichtbaren Terminal-Inhalt. | `clear` |
 | `date` | Gibt Datum und lokale Uhrzeit aus. | `date` |
-| `whoami` | Gibt den simulierten Benutzer aus: `guest`. | `whoami` |
-| `hostname` | Gibt den simulierten Hostnamen aus: `ptux`. | `hostname` |
+| `whoami` | Gibt den simulierten Benutzer aus: `secadmin`. | `whoami` |
+| `hostname` | Gibt den simulierten Hostnamen aus: `localpc`. | `hostname` |
 | `uname` | Gibt den Kernel-Namen aus; `-a` zeigt zusätzliche Simulationsdaten. | `uname -a` |
 | `neofetch` | Zeigt eine kompakte Systemzusammenfassung. | `neofetch` |
 | `tracert` | Simuliert eine zufällige Offline-Route über Westerstede, IXPs und ein zufälliges Ziel. | `tracert 132.45.32.231` |
@@ -56,7 +56,7 @@ Beim Start stehen unter anderem diese Pfade zur Verfügung:
 │   ├── motd
 │   └── os-release
 ├── home/
-│   └── guest/
+│   └── secadmin/
 │       ├── desktop/
 │       ├── documents/
 │       ├── downloads/

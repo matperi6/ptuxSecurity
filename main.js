@@ -6,6 +6,7 @@
   const serverLayer = document.querySelector('#server-layer');
   const serverInfo = document.querySelector('#server-info');
   const codeOutput = document.querySelector('#code-output');
+  const aiOutput = document.querySelector('#ai-output');
   const mapState = { zoom: 0, panX: 0, panY: 0, dragging: false, lastX: 0, lastY: 0 };
   const serverStorageKey = 'ptuxSecurity.servers';
   const historyStorageKey = 'ptuxSecurity.history';
@@ -173,7 +174,7 @@
       etc: {
         type: 'dir',
         entries: {
-          hostname: { type: 'file', content: 'ptux' },
+          hostname: { type: 'file', content: 'localpc' },
           motd: { type: 'file', content: 'Welcome to ptux Linux 1.0 (browser build)' },
           'os-release': { type: 'file', content: 'NAME="ptux Linux"\nVERSION="1.0 (Browser Edition)"\nID=ptux' },
         },
@@ -181,7 +182,7 @@
       home: {
         type: 'dir',
         entries: {
-          guest: {
+          secadmin: {
             type: 'dir',
             entries: {
               'readme.txt': { type: 'file', content: 'This is your local playground.\nNothing here leaves your browser.\nTry: help, ls, cd, cat, mkdir, touch.' },
@@ -199,18 +200,18 @@
 
   const commandNames = ['addsuperuser', 'cat', 'cd', 'clear', 'date', 'echo', 'exit', 'help', 'history', 'hostname', 'installserver', 'ls', 'man', 'mkdir', 'neofetch', 'pwd', 'reset', 'rm', 'touch', 'tracert', 'uname', 'whoami', 'which'];
   const initialFileSystem = JSON.stringify(fileSystem);
-  let currentDirectory = '/home/guest';
+  let currentDirectory = '/home/secadmin';
   let input = '';
   let history = [];
   let historyIndex = 0;
 
   const promptPath = () => {
-    if (currentDirectory === '/home/guest') return '~';
-    if (currentDirectory.startsWith('/home/guest/')) return `~/${currentDirectory.slice('/home/guest/'.length)}`;
+    if (currentDirectory === '/home/secadmin') return '~';
+    if (currentDirectory.startsWith('/home/secadmin/')) return `~/${currentDirectory.slice('/home/secadmin/'.length)}`;
     return currentDirectory;
   };
 
-  const prompt = () => `${colors.green}guest${colors.reset}@${colors.blue}ptux${colors.reset}:${colors.brightGreen}${promptPath()}${colors.reset}$ `;
+  const prompt = () => `${colors.green}secadmin${colors.reset}@${colors.blue}localpc${colors.reset}:${colors.brightGreen}${promptPath()}${colors.reset}$ `;
   const writePrompt = () => terminal.write(`\r\n${prompt()}`);
   const print = (text = '') => text.split('\n').forEach((line) => terminal.writeln(line));
   const appendCodeLine = (text, kind = 'code') => {
@@ -384,7 +385,7 @@
     codeOutput.replaceChildren();
     Object.keys(fileSystem.entries).forEach((key) => delete fileSystem.entries[key]);
     Object.assign(fileSystem, JSON.parse(initialFileSystem));
-    currentDirectory = '/home/guest';
+    currentDirectory = '/home/secadmin';
     input = '';
     history = [];
     historyIndex = 0;
@@ -395,7 +396,7 @@
 
   function resolvePath(path = '~') {
     let target = path;
-    if (target === '~' || target.startsWith('~/')) target = `/home/guest${target.slice(1)}`;
+    if (target === '~' || target.startsWith('~/')) target = `/home/secadmin${target.slice(1)}`;
     else if (!target.startsWith('/')) target = `${currentDirectory}/${target}`;
     const parts = target.split('/');
     const normalized = [];
@@ -428,18 +429,18 @@
   function listDirectory(path, showAll, longFormat) {
     const node = getNode(path);
     if (!node) return `${colors.orange}ls: cannot access '${path}': No such file or directory${colors.reset}`;
-    if (node.type !== 'dir') return longFormat ? `-rw-r--r--  1 guest guest  ${node.content.length.toString().padStart(4, ' ')}  ${path}` : path;
+    if (node.type !== 'dir') return longFormat ? `-rw-r--r--  1 secadmin secadmin  ${node.content.length.toString().padStart(4, ' ')}  ${path}` : path;
     const entries = Object.keys(node.entries).sort();
     const visible = showAll ? ['.', '..', ...entries] : entries;
     if (!longFormat) return visible.map((entry) => node.entries[entry]?.type === 'dir' ? `${colors.blue}${entry}/${colors.reset}` : entry).join('  ');
     return visible.map((entry) => {
-      if (entry === '.') return 'drwxr-xr-x  4 guest guest  4096  .';
-      if (entry === '..') return 'drwxr-xr-x  4 guest guest  4096  ..';
+      if (entry === '.') return 'drwxr-xr-x  4 secadmin secadmin  4096  .';
+      if (entry === '..') return 'drwxr-xr-x  4 secadmin secadmin  4096  ..';
       const child = node.entries[entry];
       const mode = child.type === 'dir' ? 'drwxr-xr-x' : '-rw-r--r--';
       const size = child.type === 'file' ? child.content.length : 4096;
       const styledName = child.type === 'dir' ? `${colors.blue}${entry}${colors.reset}` : entry;
-      return `${mode}  1 guest guest  ${size.toString().padStart(4, ' ')}  ${styledName}`;
+      return `${mode}  1 secadmin secadmin  ${size.toString().padStart(4, ' ')}  ${styledName}`;
     }).join('\n');
   }
 
@@ -475,10 +476,10 @@
     if (command === 'installserver') return installServer(args);
     if (command === 'addsuperuser') { addSuperuser(args); return; }
     if (command === 'pwd') { print(currentDirectory); return; }
-    if (command === 'whoami') { print('guest'); return; }
-    if (command === 'hostname') { print('ptux'); return; }
+    if (command === 'whoami') { print('secadmin'); return; }
+    if (command === 'hostname') { print('localpc'); return; }
     if (command === 'date') { print(new Date().toString()); return; }
-    if (command === 'uname') { print(args.includes('-a') ? 'ptux 1.0.0 browser-kernel #1 SMP Web x86_64 GNU/Linux' : 'ptux'); return; }
+    if (command === 'uname') { print(args.includes('-a') ? 'localpc 1.0.0 browser-kernel #1 SMP Web x86_64 GNU/Linux' : 'localpc'); return; }
     if (command === 'echo') { print(args.join(' ')); return; }
     if (command === 'tracert') {
       if (args[0] !== '132.45.32.231') { print(`${colors.orange}tracert: unknown route target${colors.reset}`); return; }
@@ -541,7 +542,7 @@
     if (command === 'which') { print(args[0] ? `/usr/bin/${args[0]}` : `${colors.orange}which: missing argument${colors.reset}`); return; }
     if (command === 'man') { print(`${colors.green}Manual: ${args[0] || 'ptux'}${colors.reset}\nTry ${colors.brightGreen}help${colors.reset} for supported commands. This is a browser shell, not a real system.`); return; }
     if (command === 'neofetch') {
-      print(`${colors.green}        .--.       ${colors.brightGreen}guest@ptux${colors.reset}`);
+      print(`${colors.green}        .--.       ${colors.brightGreen}secadmin@localpc${colors.reset}`);
       print(`${colors.green}       |o_o |      ${colors.dim}----------------${colors.reset}`);
       print(`${colors.green}       |:_/ |      ${colors.blue}OS${colors.reset}: ptux Linux 1.0`);
       print(`${colors.green}      //   \\ \\     ${colors.blue}Host${colors.reset}: Browser`);
@@ -610,7 +611,7 @@
   function reset() {
     Object.keys(fileSystem.entries).forEach((key) => delete fileSystem.entries[key]);
     Object.assign(fileSystem, JSON.parse(initialFileSystem));
-    currentDirectory = '/home/guest';
+    currentDirectory = '/home/secadmin';
     input = '';
     history = [];
     historyIndex = 0;
@@ -625,7 +626,18 @@
   }
 
   function boot() {
-     terminal.write(prompt());
+    terminal.write(prompt());
+  }
+
+  function typeAiMessage() {
+    if (!aiOutput) return;
+    const message = 'Guten Morgen secadmin. Was kann ich heute für dich tun?';
+    let characterIndex = 0;
+    aiOutput.textContent = '';
+    const typingTimer = window.setInterval(() => {
+      aiOutput.textContent += message[characterIndex++];
+      if (characterIndex >= message.length) window.clearInterval(typingTimer);
+    }, 18);
   }
 
   document.querySelectorAll('[data-command]').forEach((button) => button.addEventListener('click', () => {
@@ -638,5 +650,6 @@
   fitTerminal();
   initializeAppData();
   loadHistory();
+  typeAiMessage();
   boot();
 })();

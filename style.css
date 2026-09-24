@@ -61,6 +61,7 @@ button { cursor: pointer; }
 .panel::after { right: -1px; bottom: -1px; border-right: 2px solid var(--green); border-bottom: 2px solid var(--green); }
 .panel h2 { position: absolute; z-index: 3; top: 13px; left: 17px; margin: 0; color: var(--green-bright); font: 500 10px 'DM Mono', monospace; letter-spacing: .16em; text-transform: uppercase; }
 .server-info, .code-output { position: absolute; inset: 44px 17px 17px; min-height: 0; overflow: hidden; }
+.ai-output { position: absolute; inset: 44px 17px 17px; margin: 0; color: var(--ink); font: 12px/1.6 'DM Mono', monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .server-info { display: grid; align-content: start; gap: 12px; color: var(--muted); font: 11px/1.45 'DM Mono', monospace; }
 .server-entry { padding-bottom: 10px; border-bottom: 1px solid var(--line); }
 .server-entry > div:first-child { color: var(--ink); white-space: nowrap; }
