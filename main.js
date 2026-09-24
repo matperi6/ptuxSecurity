@@ -198,12 +198,16 @@
     },
   };
 
-  const commandNames = ['addsuperuser', 'cat', 'cd', 'clear', 'date', 'echo', 'exit', 'help', 'history', 'hostname', 'installserver', 'ls', 'man', 'mkdir', 'neofetch', 'pwd', 'reset', 'rm', 'touch', 'tracert', 'uname', 'whoami', 'which'];
+  const commandNames = ['addsuperuser', 'analyzemonitor', 'blockip', 'cat', 'cd', 'clear', 'configserver', 'date', 'deployservice', 'echo', 'exit', 'help', 'history', 'hostname', 'incidentreport', 'installserver', 'integritycheck', 'lockserver', 'ls', 'man', 'mkdir', 'neofetch', 'pwd', 'reset', 'restoreservice', 'rm', 'ssh', 'startmonitor', 'touch', 'tracert', 'uname', 'whoami', 'which'];
   const initialFileSystem = JSON.stringify(fileSystem);
   let currentDirectory = '/home/secadmin';
   let input = '';
   let history = [];
   let historyIndex = 0;
+  const serverCredentials = new Map();
+  let pendingSshAuth = null;
+  let pendingSshPassword = '';
+  let activeSshHost = '';
 
   const promptPath = () => {
     if (currentDirectory === '/home/secadmin') return '~';
@@ -211,7 +215,7 @@
     return currentDirectory;
   };
 
-  const prompt = () => `${colors.green}secadmin${colors.reset}@${colors.blue}localpc${colors.reset}:${colors.brightGreen}${promptPath()}${colors.reset}$ `;
+  const prompt = () => `${colors.green}secadmin${colors.reset}@${colors.blue}${activeSshHost || 'localpc'}${colors.reset}:${colors.brightGreen}${promptPath()}${colors.reset}$ `;
   const writePrompt = () => terminal.write(`\r\n${prompt()}`);
   const print = (text = '') => text.split('\n').forEach((line) => terminal.writeln(line));
   const appendCodeLine = (text, kind = 'code') => {
@@ -223,6 +227,7 @@
     const maxLines = Math.max(1, Math.floor(codeOutput.clientHeight / lineHeight));
     while (codeOutput.children.length > maxLines) codeOutput.firstElementChild.remove();
   };
+  const reportGameEvent = (command, args = [], extra = {}) => window.ptuxGame?.recordCommand({ command, args, ...extra });
   const saveServers = () => localStorage.setItem(serverStorageKey, JSON.stringify(installedServers));
   const saveHistory = () => localStorage.setItem(historyStorageKey, JSON.stringify(history));
   const loadHistory = () => {
@@ -251,7 +256,7 @@
   const showServerInfo = () => {
     serverInfo.replaceChildren();
     if (!installedServers.length) {
-      serverInfo.innerHTML = '<span class="empty-state">Noch kein Server installiert.</span>';
+      serverInfo.innerHTML = '<span class="empty-state"></span>';
       return;
     }
     installedServers.forEach((server) => {
@@ -305,6 +310,10 @@
     }
     return { ...validDatacenter, ip };
   };
+  const generateBootstrapPassword = () => {
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+    return Array.from(crypto.getRandomValues(new Uint8Array(12)), (value) => alphabet[value % alphabet.length]).join('');
+  };
   const installServer = async (args) => {
     if (args.length !== 4) {
       printInstallServerError('installserver: usage: installserver <hostname> <os> <stadt> <ipadresse>');
@@ -313,6 +322,7 @@
     const [hostname, os, cityName, ip] = args;
     const datacenter = await validateInstallServer(args);
     if (!datacenter) return;
+    const credentials = { username: 'secadmin', password: generateBootstrapPassword() };
     availableDatacenters = availableDatacenters.filter((entry) => !(entry.name === datacenter.name && entry.ip === datacenter.ip));
     localStorage.setItem(availableDatacentersStorageKey, JSON.stringify(availableDatacenters));
     const script = [
@@ -328,6 +338,9 @@
       'ptux-install --partition-layout guided',
       'ptux-install --network dhcp --offline',
       `ptux-install --hostname ${hostname}`,
+      'ptux-secret create --name bootstrap-password --random --length 12',
+      'ptux-user add --username secadmin --groups sudo --home /home/secadmin',
+      'ptux-user set-password --username secadmin --password-from-secret bootstrap-password',
       'ptux-install --enable ssh',
       'ptux-install --write-bootloader',
       'system-image --verify ptuXOS-base.img',
@@ -344,11 +357,14 @@
     let step = 0;
     appendCodeLine(`[installserver] PXE-Installation gestartet: ${hostname}`, 'output');
     const completeInstallation = async () => {
-      installedServers.push({ os, ip, hostname, datacenter });
+      const server = { os, ip, hostname, datacenter };
+      serverCredentials.set(hostname.toLocaleLowerCase(), credentials);
+      installedServers.push(server);
       saveServers();
       showServerInfo();
       updateMapTransform();
       appendCodeLine(`[installserver] Installation abgeschlossen: ${hostname}`, 'output');
+      reportGameEvent('installserver', args, { server, credentials });
     };
     const installationTimer = window.setInterval(() => {
       appendCodeLine(script[step++]);
@@ -374,6 +390,74 @@
     print(`passwd: password updated successfully for ${username}`);
     print(`${colors.green}User '${username}' wurde der sudo-Gruppe hinzugefügt.${colors.reset}`);
   };
+  const getInstalledServer = (hostname) => installedServers.find((server) => server.hostname.toLocaleLowerCase() === hostname?.toLocaleLowerCase());
+  const startSshLogin = (args) => {
+    if (args.length !== 1 || !args[0].includes('@')) {
+      print(`${colors.orange}ssh: usage: ssh <benutzername>@<hostname>${colors.reset}`);
+      return;
+    }
+    const [username, hostname] = args[0].split('@');
+    const server = getInstalledServer(hostname);
+    const credentials = server && serverCredentials.get(server.hostname.toLocaleLowerCase());
+    if (!server || !credentials || credentials.username !== username) {
+      print(`${colors.orange}ssh: unbekannter Benutzer oder Server.${colors.reset}`);
+      return;
+    }
+    pendingSshAuth = { server, credentials };
+    pendingSshPassword = '';
+    terminal.write(`${colors.blue}${username}@${hostname}'s password: ${colors.reset}`);
+    return 'ssh-password-prompt';
+  };
+  const runMetaCommand = (command, args) => {
+    const server = getInstalledServer(args[0]);
+    if (['configserver', 'deployservice', 'startmonitor', 'lockserver', 'restoreservice'].includes(command) && !server) {
+      print(`${colors.orange}${command}: Server '${args[0] || ''}' ist nicht installiert.${colors.reset}`);
+      return false;
+    }
+    if (command === 'configserver') {
+      if (args.length !== 1) { print(`${colors.orange}configserver: usage: configserver <hostname>${colors.reset}`); return false; }
+      ['sshd --enable', 'ufw default deny incoming', 'ufw allow ssh', 'ufw --enable'].forEach((line) => appendCodeLine(`[configserver] ${line} --target ${args[0]}`));
+      print(`${colors.green}${args[0]}: Benutzer, SSH und Firewall sind eingerichtet.${colors.reset}`);
+    } else if (command === 'deployservice') {
+      if (args.length !== 2 || !['web', 'dns'].includes(args[1])) { print(`${colors.orange}deployservice: usage: deployservice <hostname> <web|dns>${colors.reset}`); return false; }
+      appendCodeLine(`[deployservice] service ${args[1]} enable --target ${args[0]}`);
+      appendCodeLine(`[deployservice] service ${args[1]} start --target ${args[0]}`);
+      print(`${colors.green}${args[1]}-Dienst auf ${args[0]} ist aktiv.${colors.reset}`);
+    } else if (command === 'startmonitor') {
+      if (args.length !== 1) { print(`${colors.orange}startmonitor: usage: startmonitor <hostname>${colors.reset}`); return false; }
+      appendCodeLine(`[startmonitor] monitor-agent --install --target ${args[0]}`);
+      appendCodeLine(`[startmonitor] monitor-agent --start --target ${args[0]}`);
+      print(`${colors.green}Monitoring auf ${args[0]} gestartet.${colors.reset}`);
+    } else if (command === 'analyzemonitor') {
+      appendCodeLine('[analyzemonitor] monitorctl --read /var/log/auth.log');
+      appendCodeLine('[analyzemonitor] pattern=brute-force action=flag');
+      print(`${colors.orange}Verdächtige IPs: 203.0.113.42, 198.51.100.23, 192.0.2.77${colors.reset}`);
+      print(`${colors.green}Angriffsmuster erkannt: wiederholte SSH-Fehlversuche.${colors.reset}`);
+    } else if (command === 'blockip') {
+      if (args.length !== 1 || !isValidIp(args[0])) { print(`${colors.orange}blockip: usage: blockip <ipadresse>${colors.reset}`); return false; }
+      appendCodeLine(`[blockip] ufw deny from ${args[0]}`);
+      print(`${colors.green}Firewall-Regel aktiv: ${args[0]} wird verworfen.${colors.reset}`);
+    } else if (command === 'lockserver') {
+      if (args.length !== 1) { print(`${colors.orange}lockserver: usage: lockserver <hostname>${colors.reset}`); return false; }
+      appendCodeLine(`[lockserver] nftables --policy drop --target ${args[0]}`);
+      appendCodeLine(`[lockserver] service web stop --target ${args[0]}`);
+      print(`${colors.orange}${args[0]} wurde in den Notfallmodus versetzt.${colors.reset}`);
+    } else if (command === 'integritycheck') {
+      appendCodeLine('[integritycheck] aide --check --all-servers');
+      print(`${colors.green}Integritaetspruefung abgeschlossen: keine manipulierten Systemdateien gefunden.${colors.reset}`);
+    } else if (command === 'restoreservice') {
+      if (args.length !== 2 || args[1] !== 'web') { print(`${colors.orange}restoreservice: usage: restoreservice <hostname> web${colors.reset}`); return false; }
+      appendCodeLine(`[restoreservice] nftables --policy allow --target ${args[0]}`);
+      appendCodeLine(`[restoreservice] service web start --target ${args[0]}`);
+      print(`${colors.green}Webdienst auf ${args[0]} kontrolliert wiederhergestellt.${colors.reset}`);
+    } else if (command === 'incidentreport') {
+      if (!args.length) { print(`${colors.orange}incidentreport: usage: incidentreport <zusammenfassung>${colors.reset}`); return false; }
+      appendCodeLine(`[incidentreport] reportctl --create --text "${args.join(' ')}"`);
+      print(`${colors.green}Incident-Report gespeichert und an das Security-Team übergeben.${colors.reset}`);
+    }
+    reportGameEvent(command, args);
+    return true;
+  };
   const resetSimulation = () => {
     installationTimers.forEach((timer) => window.clearInterval(timer));
     installationTimers.clear();
@@ -391,6 +475,11 @@
     historyIndex = 0;
     localStorage.removeItem(historyStorageKey);
     terminal.clear();
+    serverCredentials.clear();
+    pendingSshAuth = null;
+    pendingSshPassword = '';
+    activeSshHost = '';
+    window.ptuxGame?.reset();
     print(`${colors.green}Simulation zurückgesetzt. localStorage wurde geleert.${colors.reset}`);
   };
 
@@ -469,12 +558,24 @@
       print(`  ${colors.green}history${colors.reset}     show command history`);
       print(`  ${colors.green}man${colors.reset}         open a compact manual`);
       print(`  ${colors.green}installserver${colors.reset} install a simulated ptuXOS server`);
+      print(`  ${colors.green}ssh${colors.reset}         connect to a simulated remote server`);
       print(`  ${colors.green}addsuperuser${colors.reset}  create a simulated sudo user`);
+      print(`  ${colors.green}configserver${colors.reset}   configure SSH and firewall`);
+      print(`  ${colors.green}deployservice${colors.reset} start a web or DNS service`);
+      print(`  ${colors.green}startmonitor${colors.reset}  start server monitoring`);
+      print(`  ${colors.green}analyzemonitor${colors.reset} inspect security logs`);
+      print(`  ${colors.green}blockip${colors.reset}       add an IP firewall block`);
+      print(`  ${colors.green}lockserver${colors.reset}   activate emergency lock-down`);
+      print(`  ${colors.green}integritycheck${colors.reset} verify system integrity`);
+      print(`  ${colors.green}restoreservice${colors.reset} restore a service`);
+      print(`  ${colors.green}incidentreport${colors.reset} save an incident report`);
       print(`  ${colors.green}reset simulation${colors.reset} clear the complete simulation state`);
       return;
     }
     if (command === 'installserver') return installServer(args);
-    if (command === 'addsuperuser') { addSuperuser(args); return; }
+    if (command === 'ssh') return startSshLogin(args);
+    if (command === 'addsuperuser') { addSuperuser(args); reportGameEvent(command, args); return; }
+    if (['configserver', 'deployservice', 'startmonitor', 'analyzemonitor', 'blockip', 'lockserver', 'integritycheck', 'restoreservice', 'incidentreport'].includes(command)) { runMetaCommand(command, args); return; }
     if (command === 'pwd') { print(currentDirectory); return; }
     if (command === 'whoami') { print('secadmin'); return; }
     if (command === 'hostname') { print('localpc'); return; }
@@ -551,7 +652,15 @@
       print(`${colors.green}    \\___)=(___/    ${colors.blue}Mode${colors.reset}: ${colors.brightGreen}offline${colors.reset}`);
       return;
     }
-    if (command === 'exit') { print(`${colors.dim}logout${colors.reset}\n${colors.green}Session kept open. Type ${colors.brightGreen}help${colors.reset} to continue.${colors.reset}`); return; }
+    if (command === 'exit') {
+      if (activeSshHost) {
+        print(`${colors.dim}Verbindung zu ${activeSshHost} geschlossen.${colors.reset}`);
+        activeSshHost = '';
+        return;
+      }
+      print(`${colors.dim}logout${colors.reset}\n${colors.green}Session kept open. Type ${colors.brightGreen}help${colors.reset} to continue.${colors.reset}`);
+      return;
+    }
     print(`${colors.orange}bash: ${command}: command not found${colors.reset}`);
   }
 
@@ -562,6 +671,23 @@
   function submit() {
     const commandLine = input.trim();
     terminal.write('\r\n');
+    if (pendingSshAuth) {
+      const { server, credentials } = pendingSshAuth;
+      const authenticated = pendingSshPassword === credentials.password;
+      pendingSshAuth = null;
+      pendingSshPassword = '';
+      if (authenticated) {
+        activeSshHost = server.hostname;
+        print(`${colors.green}Authentifizierung erfolgreich. Verbunden mit ${server.hostname}.${colors.reset}`);
+        print(`${colors.dim}Dies ist eine simulierte Remote-Shell.${colors.reset}`);
+        reportGameEvent('ssh', [credentials.username, server.hostname], { server, authenticated: true });
+      } else {
+        print(`${colors.orange}Permission denied, please try again.${colors.reset}`);
+      }
+      input = '';
+      writePrompt();
+      return;
+    }
     if (commandLine) {
       history = history.filter((item) => item !== commandLine);
       history.push(commandLine);
@@ -569,6 +695,7 @@
       saveHistory();
       historyIndex = history.length;
       const execution = execute(commandLine);
+      if (execution === 'ssh-password-prompt') { input = ''; return; }
       if (execution?.then) {
         execution.then(() => {
           input = '';
@@ -597,6 +724,17 @@
   }
 
   terminal.onData((data) => {
+    if (pendingSshAuth) {
+      if (data === '\r') { submit(); return; }
+      if (data === '\u0003') { pendingSshAuth = null; pendingSshPassword = ''; terminal.write('^C'); input = ''; writePrompt(); return; }
+      if (data === '\u007f') { if (pendingSshPassword.length) { pendingSshPassword = pendingSshPassword.slice(0, -1); terminal.write('\b \b'); } return; }
+      if (!data.includes('\u001b')) {
+        const passwordChunk = data.replace(/[\r\n]/g, '');
+        pendingSshPassword += passwordChunk;
+        terminal.write('*'.repeat(passwordChunk.length));
+      }
+      return;
+    }
     if (data === '\r') { submit(); return; }
     if (data === '\u0003') { terminal.write('^C'); input = ''; writePrompt(); return; }
     if (data === '\u0004') { if (!input) { terminal.write('^D'); writePrompt(); } return; }
@@ -616,6 +754,10 @@
     history = [];
     historyIndex = 0;
     installedServers = [];
+    serverCredentials.clear();
+    pendingSshAuth = null;
+    pendingSshPassword = '';
+    activeSshHost = '';
     localStorage.removeItem(serverStorageKey);
     initializeAppData();
     showServerInfo();
@@ -629,17 +771,6 @@
     terminal.write(prompt());
   }
 
-  function typeAiMessage() {
-    if (!aiOutput) return;
-    const message = 'Guten Morgen secadmin. Was kann ich heute für dich tun?';
-    let characterIndex = 0;
-    aiOutput.textContent = '';
-    const typingTimer = window.setInterval(() => {
-      aiOutput.textContent += message[characterIndex++];
-      if (characterIndex >= message.length) window.clearInterval(typingTimer);
-    }, 18);
-  }
-
   document.querySelectorAll('[data-command]').forEach((button) => button.addEventListener('click', () => {
     input = button.dataset.command;
     redrawInput();
@@ -650,6 +781,6 @@
   fitTerminal();
   initializeAppData();
   loadHistory();
-  typeAiMessage();
+  window.ptuxGame?.start();
   boot();
 })();
