@@ -39,6 +39,7 @@
           </div>
         </section>
         <section class="panel panel-terminal" aria-label="Linux Terminal Emulator">
+          <div id="terminal-tabs" class="terminal-tabs" role="tablist" aria-label="Terminals"></div>
           <div class="terminal-window">
             <div class="terminal-body" id="terminal" role="application" aria-label="Interaktives Linux-Terminal"></div>
           </div>
@@ -46,7 +47,7 @@
       </section>
       <section class="column column-right" aria-label="Systemstatus">
         <section class="panel panel-ai"><h2>PTuX-KI</h2><p id="ai-output" class="ai-output" aria-live="polite"></p></section>
-        <section class="panel panel-safe"><h2>IP-Safe</h2></section>
+        <section class="panel panel-safe"><h2>Info-Safe</h2><div id="safe-entries" class="safe-entries" aria-live="polite"></div></section>
         <section class="panel panel-warnings"><h2>Warnungen</h2></section>
       </section>
     </main>
@@ -55,6 +56,7 @@
   <script src="vendor/xterm-addon-fit/xterm-addon-fit.js"></script>
   <script src="game-data.js"></script>
   <script src="game.js"></script>
+  <script src="passwort-woerter.js"></script>
   <script src="main.js"></script>
 </body>
 </html>
