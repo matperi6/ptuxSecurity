@@ -16,6 +16,10 @@
           <h2>Infos</h2>
           <div id="server-info" class="server-info" aria-live="polite"><span class="empty-state"></span></div>
         </section>
+        <section class="panel panel-logs">
+          <h2>LOGS</h2>
+          <div id="blocked-logs" class="blocked-logs" aria-live="polite"><span class="empty-state">Noch keine IPs geblockt.</span></div>
+        </section>
         <section class="panel panel-code">
           <h2>Code</h2>
           <div id="code-output" class="code-output" aria-live="polite" aria-label="Simulierter Installationscode"></div>
@@ -28,6 +32,7 @@
               <g id="map-viewport">
                 <g id="country-layer"></g>
                 <g id="route-layer"></g>
+                <g id="attack-layer"></g>
                 <g id="server-layer"></g>
               </g>
             </svg>
@@ -48,7 +53,14 @@
       <section class="column column-right" aria-label="Systemstatus">
         <section class="panel panel-ai"><h2>PTuX-KI</h2><p id="ai-output" class="ai-output" aria-live="polite"></p></section>
         <section class="panel panel-safe"><h2>Info-Safe</h2><div id="safe-entries" class="safe-entries" aria-live="polite"></div></section>
-        <section class="panel panel-warnings"><h2>Warnungen</h2></section>
+        <section class="panel panel-warnings">
+          <h2>MONITOR</h2>
+          <div class="monitor-indicators" aria-label="Sicherheitsstatus">
+            <span>Firewall<i id="firewall-status" class="monitor-status is-off" aria-label="aus"></i></span>
+            <span>fail2ban<i id="fail2ban-status" class="monitor-status is-off" aria-label="aus"></i></span>
+          </div>
+          <div id="monitor-output" class="monitor-output" aria-live="polite"><span class="empty-state">Keine aktiven Sicherheitsmeldungen.</span></div>
+        </section>
       </section>
     </main>
   </div>

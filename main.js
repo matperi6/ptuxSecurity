@@ -3,10 +3,15 @@
   const mapViewport = document.querySelector('#map-viewport');
   const countryLayer = document.querySelector('#country-layer');
   const routeLayer = document.querySelector('#route-layer');
+  const attackLayer = document.querySelector('#attack-layer');
   const serverLayer = document.querySelector('#server-layer');
   const serverInfo = document.querySelector('#server-info');
   const codeOutput = document.querySelector('#code-output');
   const aiOutput = document.querySelector('#ai-output');
+  const monitorOutput = document.querySelector('#monitor-output');
+  const blockedLogs = document.querySelector('#blocked-logs');
+  const firewallStatus = document.querySelector('#firewall-status');
+  const fail2banStatus = document.querySelector('#fail2ban-status');
   const mapState = { zoom: 0, panX: 0, panY: 0, dragging: false, lastX: 0, lastY: 0 };
   const serverStorageKey = 'ptuxSecurity.servers';
   const historyStorageKey = 'ptuxSecurity.history';
@@ -26,16 +31,75 @@
     { name: 'Stuttgart', lon: 9.17702, lat: 48.78232 },
     { name: 'Hannover', lon: 9.73322, lat: 52.37052 },
   ];
-  const datacenterIps = ['45.83.12.10', '46.101.22.20', '51.68.33.30', '80.158.44.40', '91.65.55.50', '138.201.66.60', '176.9.77.70', '185.12.88.80', '193.175.99.90', '212.201.110.100'];
+  const datacenterIps = [
+    ['45.83.12.10', '45.83.12.11'], ['46.101.22.20', '46.101.22.21'],
+    ['51.68.33.30', '51.68.33.31'], ['80.158.44.40', '80.158.44.41'],
+    ['91.65.55.50', '91.65.55.51'], ['138.201.66.60', '138.201.66.61'],
+    ['176.9.77.70', '176.9.77.71'], ['185.12.88.80', '185.12.88.81'],
+    ['193.175.99.90', '193.175.99.91'], ['212.201.110.100', '212.201.110.101'],
+  ];
   let cityData = [];
   let installedServers = [];
   let availableDatacenters = [];
   const installationTimers = new Set();
+  const attackTimers = new Map();
+  const attackFlashTimers = new Set();
   let mapDataReady;
   const mapScale = () => 50 ** (mapState.zoom / 50);
+  const attackColors = [
+    '#ff6b6b', '#4dd0e1', '#c6e05b', '#ffb74d', '#ce93d8',
+    '#64b5f6', '#a5d6a7', '#f06292', '#fff176', '#80cbc4',
+    '#ff8a65', '#b39ddb', '#aed581', '#4fc3f7', '#e57373',
+    '#dce775', '#ba68c8', '#81d4fa', '#ffcc80', '#f48fb1',
+  ];
   const targetPlaces = [
     ['Reykjavik, IS', -21.94, 64.15], ['Toronto, CA', -79.38, 43.65], ['Tokyo, JP', 139.69, 35.68],
     ['Singapore, SG', 103.82, 1.35], ['Cape Town, ZA', 18.42, -33.93], ['São Paulo, BR', -46.63, -23.55],
+  ];
+  const attackerOrigins = [
+    { city: 'Moskau, Russland', lon: 37.6173, lat: 55.7558, prefix: '5.8' },
+    { city: 'Sankt Petersburg, Russland', lon: 30.3351, lat: 59.9343, prefix: '31.173' },
+    { city: 'Nowosibirsk, Russland', lon: 82.9204, lat: 55.0302, prefix: '46.17' },
+    { city: 'Kasan, Russland', lon: 49.1064, lat: 55.7961, prefix: '178.208' },
+    { city: 'Jekaterinburg, Russland', lon: 60.5975, lat: 56.8389, prefix: '95.161' },
+    { city: 'Krasnojarsk, Russland', lon: 92.8526, lat: 56.0153, prefix: '109.106' },
+    { city: 'Wladiwostok, Russland', lon: 131.8855, lat: 43.1155, prefix: '212.107' },
+    { city: 'Rostow am Don, Russland', lon: 39.7015, lat: 47.2357, prefix: '176.213' },
+    { city: 'Peking, China', lon: 116.4074, lat: 39.9042, prefix: '39.156' },
+    { city: 'Shanghai, China', lon: 121.4737, lat: 31.2304, prefix: '110.52' },
+    { city: 'Chengdu, China', lon: 104.0668, lat: 30.5728, prefix: '114.114' },
+    { city: 'Guangzhou, China', lon: 113.2644, lat: 23.1291, prefix: '223.5' },
+    { city: 'Shenzhen, China', lon: 114.0579, lat: 22.5431, prefix: '119.123' },
+    { city: 'Hangzhou, China', lon: 120.1551, lat: 30.2741, prefix: '115.236' },
+    { city: 'Wuhan, China', lon: 114.3054, lat: 30.5931, prefix: '59.172' },
+    { city: 'Chongqing, China', lon: 106.5516, lat: 29.563, prefix: '222.177' },
+    { city: 'Xi’an, China', lon: 108.9398, lat: 34.3416, prefix: '113.140' },
+    { city: 'Teheran, Iran', lon: 51.389, lat: 35.6892, prefix: '5.160' },
+    { city: 'Bagdad, Irak', lon: 44.3661, lat: 33.3152, prefix: '37.238' },
+    { city: 'Riad, Saudi-Arabien', lon: 46.6753, lat: 24.7136, prefix: '37.105' },
+    { city: 'Dubai, VAE', lon: 55.2708, lat: 25.2048, prefix: '94.200' },
+    { city: 'Kabul, Afghanistan', lon: 69.2075, lat: 34.5553, prefix: '103.219' },
+    { city: 'Mumbai, Indien', lon: 72.8777, lat: 19.076, prefix: '103.86' },
+    { city: 'Delhi, Indien', lon: 77.209, lat: 28.6139, prefix: '103.25' },
+    { city: 'Karachi, Pakistan', lon: 67.0011, lat: 24.8607, prefix: '182.176' },
+    { city: 'Dhaka, Bangladesch', lon: 90.4125, lat: 23.8103, prefix: '103.230' },
+    { city: 'Bangkok, Thailand', lon: 100.5018, lat: 13.7563, prefix: '49.231' },
+    { city: 'Jakarta, Indonesien', lon: 106.8456, lat: -6.2088, prefix: '103.28' },
+    { city: 'Kuala Lumpur, Malaysia', lon: 101.6869, lat: 3.139, prefix: '175.139' },
+    { city: 'Manila, Philippinen', lon: 120.9842, lat: 14.5995, prefix: '120.29' },
+    { city: 'Hanoi, Vietnam', lon: 105.8342, lat: 21.0278, prefix: '113.160' },
+    { city: 'Seoul, Südkorea', lon: 126.978, lat: 37.5665, prefix: '121.130' },
+    { city: 'Nairobi, Kenia', lon: 36.8219, lat: -1.2921, prefix: '41.89' },
+    { city: 'Johannesburg, Südafrika', lon: 28.0473, lat: -26.2041, prefix: '197.96' },
+    { city: 'Kairo, Ägypten', lon: 31.2357, lat: 30.0444, prefix: '41.33' },
+    { city: 'Lagos, Nigeria', lon: 3.3792, lat: 6.5244, prefix: '105.112' },
+    { city: 'Addis Abeba, Äthiopien', lon: 38.7578, lat: 8.9806, prefix: '197.156' },
+    { city: 'Accra, Ghana', lon: -0.187, lat: 5.6037, prefix: '41.66' },
+    { city: 'São Paulo, Brasilien', lon: -46.6333, lat: -23.5505, prefix: '177.92' },
+    { city: 'Buenos Aires, Argentinien', lon: -58.3816, lat: -34.6037, prefix: '190.210' },
+    { city: 'Lima, Peru', lon: -77.0428, lat: -12.0464, prefix: '181.65' },
+    { city: 'Bogotá, Kolumbien', lon: -74.0721, lat: 4.711, prefix: '181.49' },
+    { city: 'Santiago, Chile', lon: -70.6693, lat: -33.4489, prefix: '186.67' },
   ];
   const project = (longitude, latitude) => [500 + longitude * (1000 / 360), 280 - latitude * (560 / 180)];
   const svgNode = (name, attrs = {}) => { const node = document.createElementNS('http://www.w3.org/2000/svg', name); Object.entries(attrs).forEach(([key, value]) => node.setAttribute(key, value)); return node; };
@@ -49,14 +113,216 @@
   };
   const updateMapTransform = () => { const scale = mapScale(); const mapTransform = `translate(${mapState.panX} ${mapState.panY}) translate(500 280) scale(${scale}) translate(-500 -280)`; mapViewport.setAttribute('transform', mapTransform); drawServerMarkers(); };
   const drawServerMarkers = () => {
+    attackLayer.replaceChildren();
     serverLayer.replaceChildren();
     installedServers.forEach((server) => {
       if (!server.datacenter) return;
       const [x, y] = project(server.datacenter.lon, server.datacenter.lat);
+      (server.attackers || []).forEach((attacker) => {
+        if (!attacker.visible && !attacker.banned) return;
+        const [attackerX, attackerY] = project(attacker.lon, attacker.lat);
+        if (!attacker.banned) {
+          attackLayer.appendChild(svgNode('line', { x1: x, y1: y, x2: attackerX, y2: attackerY, class: `attack-link${attacker.active ? ' attack-link--active' : ''}`, style: `--server-attack-color: ${server.attackColor || attackColors[0]}` }));
+        }
+        const markerClass = attacker.banned ? 'attacker-marker attacker-marker--banned' : `attacker-marker${attacker.active ? ' attacker-marker--active' : ''}`;
+        const markerLabel = attacker.banned ? `${attacker.ip} aus ${attacker.city} dauerhaft gebannt` : `${attacker.ip} aus ${attacker.city} greift ${server.hostname} an`;
+        const marker = svgNode('g', { class: markerClass, 'aria-label': markerLabel, style: `--server-attack-color: ${server.attackColor || attackColors[0]}` });
+        marker.appendChild(svgNode('circle', { cx: attackerX, cy: attackerY, r: 5 / mapScale() }));
+        attackLayer.appendChild(marker);
+      });
       const marker = svgNode('g', { class: 'server-marker', 'aria-label': `Serverstandort ${server.hostname} in ${server.datacenter.name}` });
       marker.appendChild(svgNode('circle', { cx: x, cy: y, r: 7 / mapScale() }));
       serverLayer.appendChild(marker);
     });
+  };
+  const assignServerAttackColors = () => installedServers.forEach((server, index) => {
+    server.attackColor ||= attackColors[index % attackColors.length];
+  });
+  const randomInteger = (minimum, maximum) => Math.floor(Math.random() * (maximum - minimum + 1)) + minimum;
+  const createAttackingComputer = (origin, existingIps = new Set()) => {
+    let ip;
+    do {
+      ip = `${origin.prefix}.${randomInteger(1, 254)}.${randomInteger(1, 254)}`;
+    } while (existingIps.has(ip));
+    return {
+      ip,
+      city: origin.city,
+      lon: origin.lon,
+      lat: origin.lat,
+      attempts: 0,
+      maxAttempts: 30,
+      nextAttackAt: Date.now() + randomInteger(500, 6000),
+      visible: false,
+      banned: false,
+      active: false,
+    };
+  };
+  const generateAttackingComputers = () => {
+    const origins = [...attackerOrigins];
+    for (let index = origins.length - 1; index > 0; index -= 1) {
+      const swapIndex = randomInteger(0, index);
+      [origins[index], origins[swapIndex]] = [origins[swapIndex], origins[index]];
+    }
+    const count = randomInteger(2, 10);
+    return origins.slice(0, count).map((origin) => createAttackingComputer(origin));
+  };
+  const appendMonitorMessage = (message, kind = 'status') => {
+    monitorOutput.querySelector('.empty-state')?.remove();
+    const line = document.createElement('div');
+    line.className = `monitor-line ${kind}`;
+    line.textContent = message;
+    monitorOutput.appendChild(line);
+    monitorOutput.scrollTop = monitorOutput.scrollHeight;
+  };
+  const appendServerMonitorMessage = (server, message, kind) => {
+    if (!terminalSessions.some((session) => session.hostname === server.hostname)) return;
+    appendMonitorMessage(message, kind);
+  };
+  const appendBlockedLog = (server, attacker) => {
+    blockedLogs.querySelector('.empty-state')?.remove();
+    const entry = document.createElement('div');
+    entry.className = 'blocked-log-entry';
+    entry.textContent = `${attacker.ip} · ${attacker.city} · ${server.hostname} · fail2ban dauerhaft gebannt`;
+    blockedLogs.prepend(entry);
+    blockedLogs.scrollTop = 0;
+  };
+  const renderBlockedLogs = () => {
+    blockedLogs.replaceChildren();
+    const entries = installedServers.flatMap((server) => (server.attackers || [])
+      .filter((attacker) => attacker.banned)
+      .map((attacker) => ({ server, attacker }))
+    ).sort((left, right) => (left.attacker.bannedAt || 0) - (right.attacker.bannedAt || 0));
+    if (!entries.length) {
+      const empty = document.createElement('span');
+      empty.className = 'empty-state';
+      empty.textContent = 'Noch keine IPs geblockt.';
+      blockedLogs.appendChild(empty);
+      return;
+    }
+    entries.forEach(({ server, attacker }) => appendBlockedLog(server, attacker));
+  };
+  const updateSecurityIndicators = (server) => {
+    [[firewallStatus, server?.firewallActive], [fail2banStatus, server?.fail2banActive]].forEach(([indicator, active]) => {
+      indicator.classList.toggle('is-on', Boolean(active));
+      indicator.classList.toggle('is-off', !active);
+      indicator.setAttribute('aria-label', active ? 'aktiv' : 'aus');
+      indicator.title = active ? 'aktiv' : 'aus';
+    });
+  };
+  const clearMonitorOutput = () => {
+    monitorOutput.replaceChildren();
+    const empty = document.createElement('span');
+    empty.className = 'empty-state';
+    empty.textContent = 'Keine aktiven Sicherheitsmeldungen.';
+    monitorOutput.appendChild(empty);
+  };
+  const scheduleAttackerAttempt = (server, attacker, nextAt) => {
+    const timerKey = `${server.hostname}:${attacker.ip}`;
+    if (attacker.banned || attackTimers.has(timerKey)) return;
+    attacker.nextAttackAt = nextAt;
+    saveServers();
+    const timer = window.setTimeout(() => {
+      attackTimers.delete(timerKey);
+      const targetServer = installedServers.find((entry) => entry.hostname === server.hostname);
+      const currentAttacker = targetServer?.attackers?.find((entry) => entry.ip === attacker.ip);
+      if (!targetServer?.firewallActive || !targetServer.fail2banActive || !currentAttacker || currentAttacker.banned) return;
+      currentAttacker.visible = true;
+      currentAttacker.attempts ??= 0;
+      currentAttacker.maxAttempts = 30;
+      currentAttacker.attempts += 1;
+      currentAttacker.active = true;
+      currentAttacker.activeUntil = Date.now() + 600;
+      appendServerMonitorMessage(targetServer, `${currentAttacker.ip} aus ${currentAttacker.city}: Angriff auf ${targetServer.hostname} (${currentAttacker.attempts}/${currentAttacker.maxAttempts})`, 'attack');
+      const flashTimer = window.setTimeout(() => {
+        attackFlashTimers.delete(flashTimer);
+        currentAttacker.active = false;
+        drawServerMarkers();
+      }, 600);
+      attackFlashTimers.add(flashTimer);
+      if (currentAttacker.attempts >= currentAttacker.maxAttempts) {
+        currentAttacker.banned = true;
+        currentAttacker.bannedAt = Date.now();
+        currentAttacker.active = false;
+        appendServerMonitorMessage(targetServer, `${currentAttacker.ip}: nach ${currentAttacker.attempts} Versuchen dauerhaft durch fail2ban gebannt.`, 'ban');
+        appendBlockedLog(targetServer, currentAttacker);
+      } else {
+        currentAttacker.nextAttackAt = Date.now() + randomInteger(850, 1150);
+      }
+      saveServers();
+      drawServerMarkers();
+      if (!currentAttacker.banned) scheduleAttackerAttempt(targetServer, currentAttacker, currentAttacker.nextAttackAt);
+    }, Math.max(0, nextAt - Date.now()));
+    attackTimers.set(timerKey, timer);
+  };
+  const scheduleNextAttackerArrival = (server, nextAt) => {
+    const timerKey = `${server.hostname}:spawner`;
+    if (attackTimers.has(timerKey)) return;
+    server.attackerSpawnAt = nextAt;
+    saveServers();
+    const timer = window.setTimeout(() => {
+      attackTimers.delete(timerKey);
+      const targetServer = installedServers.find((entry) => entry.hostname === server.hostname);
+      if (!targetServer?.firewallActive || !targetServer.fail2banActive) return;
+      const existingIps = new Set((targetServer.attackers || []).map((attacker) => attacker.ip));
+      const origin = attackerOrigins[randomInteger(0, attackerOrigins.length - 1)];
+      const attacker = createAttackingComputer(origin, existingIps);
+      attacker.nextAttackAt = Date.now();
+      targetServer.attackers.push(attacker);
+      targetServer.attackerSpawnAt = Date.now() + randomInteger(10000, 20000);
+      saveServers();
+      drawServerMarkers();
+      scheduleAttackerAttempt(targetServer, attacker, attacker.nextAttackAt);
+      scheduleNextAttackerArrival(targetServer, targetServer.attackerSpawnAt);
+    }, Math.max(0, nextAt - Date.now()));
+    attackTimers.set(timerKey, timer);
+  };
+  const scheduleAttackSimulation = (server, delay = 3500) => {
+    if (server.attackers?.length) {
+      server.attackerSpawnAt ??= Date.now() + randomInteger(10000, 20000);
+      server.attackers.forEach((attacker) => {
+        if (attacker.banned) return;
+        attacker.attempts ??= 0;
+        attacker.maxAttempts = 30;
+        attacker.visible ??= true;
+        attacker.nextAttackAt ??= Date.now() + randomInteger(500, 6000);
+        scheduleAttackerAttempt(server, attacker, attacker.nextAttackAt);
+      });
+      scheduleNextAttackerArrival(server, server.attackerSpawnAt);
+      return;
+    }
+    if (attackTimers.has(server.hostname)) return;
+    server.attackScheduledAt ??= Date.now() + delay;
+    saveServers();
+    const timer = window.setTimeout(() => {
+      attackTimers.delete(server.hostname);
+      const targetServer = installedServers.find((entry) => entry.hostname === server.hostname);
+      if (!targetServer?.firewallActive || !targetServer.fail2banActive) return;
+      targetServer.attackers = generateAttackingComputers();
+      targetServer.attackScheduledAt = null;
+      targetServer.attackerSpawnAt = Date.now() + randomInteger(10000, 20000);
+      saveServers();
+      drawServerMarkers();
+      scheduleAttackSimulation(targetServer);
+    }, Math.max(0, server.attackScheduledAt - Date.now()));
+    attackTimers.set(server.hostname, timer);
+  };
+  const resumePendingAttackSimulations = () => {
+    installedServers.filter((server) => server.firewallActive && server.fail2banActive)
+      .forEach((server) => {
+        (server.attackers || []).forEach((attacker) => {
+          attacker.active = false;
+          if (attacker.banned) return;
+          attacker.visible ??= true;
+          attacker.nextAttackAt ??= Date.now() + randomInteger(500, 6000);
+        });
+        scheduleAttackSimulation(server);
+      });
+  };
+  const clearAttackTimers = () => {
+    attackTimers.forEach((timer) => window.clearTimeout(timer));
+    attackTimers.clear();
+    attackFlashTimers.forEach((timer) => window.clearTimeout(timer));
+    attackFlashTimers.clear();
   };
   const drawRoute = (target) => {
     routeLayer.replaceChildren();
@@ -73,6 +339,12 @@
       ]);
       cityData = cities;
       loadServers();
+      assignServerAttackColors();
+      saveServers();
+      updateSecurityIndicators(installedServers.find((server) => server.hostname === activeSshHost)
+        || installedServers.find((server) => server.firewallActive || server.fail2banActive));
+      renderBlockedLogs();
+      resumePendingAttackSimulations();
       availableDatacenters = availableDatacenters.filter((datacenter) => !installedServers.some((server) => server.ip === datacenter.ip));
       localStorage.setItem(availableDatacentersStorageKey, JSON.stringify(availableDatacenters));
       showServerInfo();
@@ -88,13 +360,13 @@
   };
   const loadAvailableDatacenters = () => {
     try {
-      const storedDatacenters = JSON.parse(localStorage.getItem(availableDatacentersStorageKey) || '[]');
-      availableDatacenters = Array.isArray(storedDatacenters) ? storedDatacenters.filter((datacenter) => deutsche_rechenzentren.some((validDatacenter) => validDatacenter.name === datacenter.name && validDatacenter.lon === datacenter.lon && validDatacenter.lat === datacenter.lat && datacenter.ip === datacenter.ip)) : [];
+      const storedServers = JSON.parse(localStorage.getItem(serverStorageKey) || '[]');
+      const installedIps = new Set(Array.isArray(storedServers) ? storedServers.map((server) => server?.ip).filter((ip) => typeof ip === 'string') : []);
+      availableDatacenters = deutsche_rechenzentren.flatMap((datacenter, index) => datacenterIps[index]
+        .filter((ip) => !installedIps.has(ip))
+        .map((ip) => ({ ...datacenter, ip })));
     } catch (error) {
-      availableDatacenters = [];
-    }
-    if (!availableDatacenters.length) {
-      availableDatacenters = deutsche_rechenzentren.map((datacenter, index) => ({ ...datacenter, ip: datacenterIps[index] }));
+      availableDatacenters = deutsche_rechenzentren.flatMap((datacenter, index) => datacenterIps[index].map((ip) => ({ ...datacenter, ip })));
     }
     localStorage.setItem(availableDatacentersStorageKey, JSON.stringify(availableDatacenters));
   };
@@ -181,11 +453,12 @@
     sudo: '1.9.15p5-3ubuntu5.1',
   };
   const adminToolsPackages = ['admintools', 'fail2ban', 'nmap', 'rkhunter', 'ufw'];
-  const commandNames = ['addsuperuser', 'analyzemonitor', 'blockip', 'cat', 'cd', 'clear', 'configserver', 'date', 'deployservice', 'echo', 'exit', 'help', 'history', 'hostname', 'incidentreport', 'installserver', 'integritycheck', 'lockserver', 'ls', 'man', 'mkdir', 'neofetch', 'pwd', 'reset', 'restoreservice', 'rm', 'ssh', 'startmonitor', 'sudo', 'touch', 'tracert', 'uname', 'whoami', 'which'];
-  const remoteCommands = new Set(['help', 'ls', 'cd', 'pwd', 'cat', 'touch', 'mkdir', 'rm', 'echo', 'date', 'whoami', 'uname', 'neofetch', 'history', 'man', 'ssh', 'sudo']);
+  const commandNames = ['addsuperuser', 'analyzemonitor', 'blockip', 'cat', 'cd', 'clear', 'configserver', 'date', 'deployservice', 'echo', 'exit', 'help', 'history', 'hostname', 'incidentreport', 'installserver', 'integritycheck', 'lockserver', 'ls', 'man', 'mkdir', 'neofetch', 'pwd', 'reset', 'restoreservice', 'rm', 'secureserver', 'ssh', 'startmonitor', 'sudo', 'touch', 'tracert', 'uname', 'whoami', 'which'];
+  const remoteCommands = new Set(['help', 'ls', 'cd', 'pwd', 'cat', 'touch', 'mkdir', 'rm', 'echo', 'date', 'whoami', 'uname', 'neofetch', 'history', 'man', 'ssh', 'sudo', 'secureserver']);
   const initialFileSystem = JSON.stringify(fileSystem);
   let currentDirectory = '/home/secadmin';
   let input = '';
+  let cursorIndex = 0;
   let history = [];
   let historyIndex = 0;
   const infoSafeEntries = [];
@@ -201,7 +474,7 @@
   const fitTerminal = () => window.requestAnimationFrame(() => fitAddon?.fit());
   const persistActiveSession = () => {
     if (!activeSession) return;
-    Object.assign(activeSession, { currentDirectory, input, history, historyIndex, pendingSshAuth, pendingSshPassword, activeSshHost });
+    Object.assign(activeSession, { currentDirectory, input, cursorIndex, history, historyIndex, pendingSshAuth, pendingSshPassword, activeSshHost });
   };
   const activateSession = (session) => {
     if (activeSession === session) return;
@@ -211,11 +484,14 @@
     fitAddon = session.fitAddon;
     currentDirectory = session.currentDirectory;
     input = session.input;
+    cursorIndex = session.cursorIndex;
     history = session.history;
     historyIndex = session.historyIndex;
     pendingSshAuth = session.pendingSshAuth;
     pendingSshPassword = session.pendingSshPassword;
     activeSshHost = session.activeSshHost;
+    updateSecurityIndicators(installedServers.find((server) => server.hostname === activeSshHost)
+      || installedServers.find((server) => server.firewallActive || server.fail2banActive));
     terminalSessions.forEach((entry) => {
       entry.container.hidden = entry !== session;
       entry.tab.setAttribute('aria-selected', String(entry === session));
@@ -254,7 +530,7 @@
     sessionTerminal.open(container);
     const session = {
       terminal: sessionTerminal, fitAddon: sessionFitAddon, container, tab, hostname,
-      currentDirectory: '/home/secadmin', input: '', history: [], historyIndex: 0,
+      currentDirectory: '/home/secadmin', input: '', cursorIndex: 0, history: [], historyIndex: 0,
       pendingSshAuth: null, pendingSshPassword: '', activeSshHost: hostname,
       installedPackages: { ...basePackages },
     };
@@ -272,6 +548,11 @@
       if (terminalSessions.length >= 4) return null;
       session = createTerminalSession(hostname);
     }
+    const server = installedServers.find((entry) => entry.hostname === hostname);
+    if (Array.isArray(server?.terminalHistory)) {
+      session.history = server.terminalHistory.slice(-20);
+      session.historyIndex = session.history.length;
+    }
     session.activeSshHost = hostname;
     session.tab.textContent = hostname;
     activateSession(session);
@@ -288,7 +569,7 @@
       terminalSessions.splice(terminalSessions.indexOf(session), 1);
     });
     localSession.terminal.clear();
-    Object.assign(localSession, { currentDirectory: '/home/secadmin', input: '', history: [], historyIndex: 0, pendingSshAuth: null, pendingSshPassword: '', activeSshHost: '' });
+    Object.assign(localSession, { currentDirectory: '/home/secadmin', input: '', cursorIndex: 0, history: [], historyIndex: 0, pendingSshAuth: null, pendingSshPassword: '', activeSshHost: '' });
     activeSession = null;
     activateSession(localSession);
   };
@@ -297,6 +578,11 @@
     if (!session || session === localSession) return null;
     const hostname = session.hostname;
     persistActiveSession();
+    const server = installedServers.find((entry) => entry.hostname === hostname);
+    if (server) {
+      server.terminalHistory = session.history.slice(-20);
+      saveServers();
+    }
     session.terminal.dispose();
     session.tab.remove();
     session.container.remove();
@@ -326,7 +612,16 @@
   };
   const reportGameEvent = (command, args = [], extra = {}) => window.ptuxGame?.recordCommand({ command, args, ...extra });
   const saveServers = () => localStorage.setItem(serverStorageKey, JSON.stringify(installedServers));
-  const saveHistory = () => { if (!activeSshHost) localStorage.setItem(historyStorageKey, JSON.stringify(history)); };
+  const saveHistory = () => {
+    if (!activeSshHost) {
+      localStorage.setItem(historyStorageKey, JSON.stringify(history));
+      return;
+    }
+    const server = installedServers.find((entry) => entry.hostname === activeSshHost);
+    if (!server) return;
+    server.terminalHistory = history.slice(-20);
+    saveServers();
+  };
   let infoSafeKeyPromise;
   const getInfoSafeKey = () => {
     if (!infoSafeKeyPromise) {
@@ -437,16 +732,20 @@
   };
   const findDatacenter = (name) => deutsche_rechenzentren.find((datacenter) => datacenter.name.toLocaleLowerCase() === name.toLocaleLowerCase());
   const isValidHostname = (value) => typeof value === 'string' && /^(?=.{1,63}$)[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/.test(value);
-  const availableDatacenterLabels = () => availableDatacenters.map((datacenter) => `${datacenter.name} (${datacenter.ip})`);
   const printInstallServerOptions = () => {
-    print(`${colors.orange}Erlaubte OS-Images: ${availableOsImages.join(', ') || 'keine'}${colors.reset}`);
-    print(`${colors.orange}Verfügbare Rechenzentren: ${availableDatacenterLabels().join(', ') || 'keine'}${colors.reset}`);
+    const datacenterLabels = deutsche_rechenzentren.map((datacenter, index) => {
+      return `${datacenter.name} (${datacenterIps[index].join(', ')})`;
+    });
+    print(`${colors.orange}installserver <hostname> <ipadresse> <os>${colors.reset}`);
+    print(`${colors.orange}Beispiel für Hostname: server01${colors.reset}`);
+    print(`${colors.orange}verfügbare Betriebssysteme (OS): ${availableOsImages.join(', ')}${colors.reset}`);
+    print(`${colors.orange}Rechenzentren: ${datacenterLabels.join(', ')}${colors.reset}`);
   };
   const printInstallServerError = (message) => {
     print(`${colors.orange}${message}${colors.reset}`);
     printInstallServerOptions();
   };
-  const validateInstallServer = async ([hostname, os, cityName, ip]) => {
+  const validateInstallServer = async ([hostname, ip, os]) => {
     if (!availableOsImages.includes(os)) {
       printInstallServerError(`installserver: OS-Image '${os}' ist nicht verfügbar.`);
       return null;
@@ -455,33 +754,38 @@
       printInstallServerError(`installserver: '${ip}' ist keine gültige IPv4-Adresse.`);
       return null;
     }
-    const datacenter = availableDatacenters.find((entry) => entry.name.toLocaleLowerCase() === cityName.toLocaleLowerCase() && entry.ip === ip);
-    if (!datacenter) {
-      printInstallServerError(`installserver: Rechenzentrum '${cityName}' mit IP-Adresse '${ip}' ist nicht verfügbar.`);
-      return null;
-    }
     if (!isValidHostname(hostname)) {
       printInstallServerError(`installserver: Hostname '${hostname}' ist ungültig. Erlaubt sind Buchstaben, Zahlen und Bindestriche.`);
       return null;
     }
-    if (installedServers.some((server) => server.hostname.toLocaleLowerCase() === hostname.toLocaleLowerCase() || server.ip === ip)) {
-      printInstallServerError(`installserver: Server mit Hostname '${hostname}' oder Rechenzentrum '${cityName}' wurde bereits installiert.`);
+    const hostnameAlreadyInstalled = installedServers.some((server) => server.hostname.toLocaleLowerCase() === hostname.toLocaleLowerCase());
+    const ipAlreadyInstalled = installedServers.some((server) => server.ip === ip);
+    if (hostnameAlreadyInstalled && ipAlreadyInstalled) {
+      printInstallServerError(`Ein Server mit der IP-Adresse '${ip}' und dem Hostnamen '${hostname}' ist bereits installiert.`);
       return null;
     }
-    const validDatacenter = findDatacenter(cityName);
-    if (!validDatacenter) {
-      printInstallServerError(`installserver: Stadt '${cityName}' ist kein zulässiges deutsches Rechenzentrum.`);
+    if (ipAlreadyInstalled) {
+      printInstallServerError(`Ein Server mit der IP-Adresse '${ip}' ist bereits installiert.`);
       return null;
     }
-    return { ...validDatacenter, ip };
+    if (hostnameAlreadyInstalled) {
+      printInstallServerError(`Ein Server mit dem Hostnamen '${hostname}' ist bereits installiert.`);
+      return null;
+    }
+    const datacenter = availableDatacenters.find((entry) => entry.ip === ip);
+    if (!datacenter) {
+      printInstallServerError(`installserver: IP-Adresse '${ip}' ist keinem verfügbaren Rechenzentrum zugeordnet.`);
+      return null;
+    }
+    return datacenter;
   };
   const generateBootstrapPassword = () => Array.from(crypto.getRandomValues(new Uint32Array(3)), (value) => window.PTUX_PASSWORD_WORDS[value % window.PTUX_PASSWORD_WORDS.length]).join('-');
   const installServer = async (args) => {
-    if (args.length !== 4) {
-      printInstallServerError('installserver: usage: installserver <hostname> <os> <stadt> <ipadresse>');
+    if (args.length !== 3) {
+      printInstallServerOptions();
       return;
     }
-    const [hostname, os, cityName, ip] = args;
+    const [hostname, ip, os] = args;
     const datacenter = await validateInstallServer(args);
     if (!datacenter) return;
     const credentials = { username: `${hostname}admin`, password: generateBootstrapPassword() };
@@ -531,6 +835,7 @@
       }
       renderInfoSafe();
       installedServers.push(server);
+      assignServerAttackColors();
       saveServers();
       showServerInfo();
       updateMapTransform();
@@ -629,9 +934,44 @@
     reportGameEvent(command, args);
     return true;
   };
+  const secureServer = (args) => {
+    if (args.length) {
+      print(`${colors.orange}secureserver: usage: secureserver${colors.reset}`);
+      return;
+    }
+    if (!activeSshHost) {
+      print(`${colors.orange}secureserver: zuerst per SSH auf dem Server anmelden.${colors.reset}`);
+      return;
+    }
+    const server = getInstalledServer(activeSshHost);
+    if (!server) {
+      print(`${colors.orange}secureserver: Server '${activeSshHost}' ist nicht installiert.${colors.reset}`);
+      return;
+    }
+    if (!['admintools', 'ufw', 'fail2ban'].every((packageName) => activeSession.installedPackages[packageName])) {
+      print(`${colors.orange}secureserver: zuerst 'sudo apt install admintools' ausführen.${colors.reset}`);
+      return;
+    }
+    const protectionsWereActive = server.firewallActive && server.fail2banActive;
+    server.firewallActive = true;
+    server.fail2banActive = true;
+    if (!server.attackers?.length) server.attackScheduledAt ??= Date.now() + 3500;
+    saveServers();
+    updateSecurityIndicators(server);
+    appendCodeLine(`[secureserver] ufw --enable --target ${server.hostname}`);
+    appendCodeLine(`[secureserver] fail2ban-client start --target ${server.hostname}`);
+    print(`${colors.green}Firewall und fail2ban auf ${server.hostname} sind aktiv.${colors.reset}`);
+    if (!protectionsWereActive) {
+      appendMonitorMessage(`Firewall aktiv: eingehende Verbindungen auf ${server.hostname} werden geprüft.`);
+      appendMonitorMessage(`fail2ban aktiv: Authentifizierungsversuche auf ${server.hostname} werden überwacht.`);
+    }
+    scheduleAttackSimulation(server);
+    reportGameEvent('secureserver', [], { server });
+  };
   const resetSimulation = () => {
     installationTimers.forEach((timer) => window.clearInterval(timer));
     installationTimers.clear();
+    clearAttackTimers();
     localStorage.clear();
     infoSafeEntries.length = 0;
     revealedPasswords.clear();
@@ -640,12 +980,17 @@
     initializeAppData();
     installedServers = [];
     showServerInfo();
+    updateSecurityIndicators(null);
+    renderBlockedLogs();
+    attackLayer.replaceChildren();
     serverLayer.replaceChildren();
+    clearMonitorOutput();
     codeOutput.replaceChildren();
     Object.keys(fileSystem.entries).forEach((key) => delete fileSystem.entries[key]);
     Object.assign(fileSystem, JSON.parse(initialFileSystem));
     currentDirectory = '/home/secadmin';
     input = '';
+    cursorIndex = 0;
     history = [];
     historyIndex = 0;
     localStorage.removeItem(historyStorageKey);
@@ -794,7 +1139,7 @@
       if (activeSshHost) {
         print(`${colors.brightGreen}ptux shell${colors.reset} ${colors.dim}:: available commands${colors.reset}`);
         print('');
-        [['help', 'show this command list'], ['ls', 'list directory contents'], ['cd', 'change directory'], ['pwd', 'print working directory'], ['cat', 'print file contents'], ['touch', 'create an empty file'], ['mkdir', 'create a directory'], ['rm', 'remove a file or directory'], ['echo', 'print text'], ['date', 'show local date and time'], ['whoami', 'print current user'], ['uname', 'print system information'], ['neofetch', 'show system summary'], ['history', 'show command history'], ['man', 'open a compact manual'], ['sudo apt', 'update, upgrade or install simulated packages'], ['ssh', 'connect to a simulated remote server']].forEach(([name, description]) => print(`  ${colors.green}${name.padEnd(10)}${colors.reset} ${description}`));
+        [['help', 'show this command list'], ['ls', 'list directory contents'], ['cd', 'change directory'], ['pwd', 'print working directory'], ['cat', 'print file contents'], ['touch', 'create an empty file'], ['mkdir', 'create a directory'], ['rm', 'remove a file or directory'], ['echo', 'print text'], ['date', 'show local date and time'], ['whoami', 'print current user'], ['uname', 'print system information'], ['neofetch', 'show system summary'], ['history', 'show command history'], ['man', 'open a compact manual'], ['sudo apt', 'update, upgrade or install simulated packages'], ['secureserver', 'activate firewall and fail2ban'], ['ssh', 'connect to a simulated remote server']].forEach(([name, description]) => print(`  ${colors.green}${name.padEnd(10)}${colors.reset} ${description}`));
         return;
       }
       print(`${colors.brightGreen}ptux shell${colors.reset} ${colors.dim}:: available commands${colors.reset}`);
@@ -819,6 +1164,7 @@
       print(`  ${colors.green}ssh${colors.reset}         connect to a simulated remote server`);
       print(`  ${colors.green}addsuperuser${colors.reset}  create a simulated sudo user`);
       print(`  ${colors.green}configserver${colors.reset}   configure SSH and firewall`);
+      print(`  ${colors.green}secureserver${colors.reset}  activate firewall and fail2ban`);
       print(`  ${colors.green}deployservice${colors.reset} start a web or DNS service`);
       print(`  ${colors.green}startmonitor${colors.reset}  start server monitoring`);
       print(`  ${colors.green}analyzemonitor${colors.reset} inspect security logs`);
@@ -837,6 +1183,7 @@
     }
     if (command === 'installserver') return installServer(args);
     if (command === 'ssh') return startSshLogin(args);
+    if (command === 'secureserver') return secureServer(args);
     if (command === 'addsuperuser') { addSuperuser(args); reportGameEvent(command, args); return; }
     if (['configserver', 'deployservice', 'startmonitor', 'analyzemonitor', 'blockip', 'lockserver', 'integritycheck', 'restoreservice', 'incidentreport'].includes(command)) { runMetaCommand(command, args); return; }
     if (command === 'pwd') { print(currentDirectory); return; }
@@ -928,6 +1275,7 @@
   }
 
   function redrawInput(value = input) {
+    cursorIndex = value.length;
     terminal.write(`\r\x1b[2K${prompt()}${value}`);
   }
 
@@ -951,6 +1299,7 @@
         print(`${colors.orange}Permission denied, please try again.${colors.reset}`);
       }
       input = '';
+      cursorIndex = 0;
       writePrompt();
       return;
     }
@@ -961,13 +1310,14 @@
       saveHistory();
       historyIndex = history.length;
       const execution = execute(commandLine);
-      if (execution === 'ssh-password-prompt') { input = ''; return; }
+      if (execution === 'ssh-password-prompt') { input = ''; cursorIndex = 0; return; }
       if (execution?.then) {
         const commandSession = activeSession;
         const commandPrompt = prompt();
         execution.then(() => {
           commandSession.input = '';
-          if (activeSession === commandSession) input = '';
+          commandSession.cursorIndex = 0;
+          if (activeSession === commandSession) { input = ''; cursorIndex = 0; }
           const restorePrompt = () => commandSession.terminal.write(`\r\n${commandPrompt}`, () => commandSession.terminal.scrollToBottom());
           if (activeSession === commandSession) {
             window.requestAnimationFrame(() => {
@@ -981,6 +1331,7 @@
       }
     }
     input = '';
+    cursorIndex = 0;
     writePrompt();
   }
 
@@ -1002,7 +1353,7 @@
   function handleTerminalData(data) {
     if (pendingSshAuth) {
       if (data === '\r') { submit(); return; }
-      if (data === '\u0003') { pendingSshAuth = null; pendingSshPassword = ''; terminal.write('^C'); input = ''; writePrompt(); return; }
+      if (data === '\u0003') { pendingSshAuth = null; pendingSshPassword = ''; terminal.write('^C'); input = ''; cursorIndex = 0; writePrompt(); return; }
       if (data === '\u007f') { if (pendingSshPassword.length) { pendingSshPassword = pendingSshPassword.slice(0, -1); terminal.write('\b \b'); } return; }
       if (!data.includes('\u001b')) {
         const passwordChunk = data.replace(/[\r\n]/g, '');
@@ -1012,14 +1363,50 @@
       return;
     }
     if (data === '\r') { submit(); return; }
-    if (data === '\u0003') { terminal.write('^C'); input = ''; writePrompt(); return; }
+    if (data === '\u0003') { terminal.write('^C'); input = ''; cursorIndex = 0; writePrompt(); return; }
     if (data === '\u0004') { if (!input) { terminal.write('^D'); writePrompt(); } return; }
-    if (data === '\u007f') { if (input.length) { input = input.slice(0, -1); terminal.write('\b \b'); } return; }
+    if (data === '\u007f') {
+      if (cursorIndex > 0) {
+        const remaining = input.slice(cursorIndex);
+        input = input.slice(0, cursorIndex - 1) + remaining;
+        cursorIndex -= 1;
+        terminal.write(`\b${remaining} \x1b[${remaining.length + 1}D`);
+      }
+      return;
+    }
+    if (data === '\u001b[3~') {
+      if (cursorIndex < input.length) {
+        const remaining = input.slice(cursorIndex + 1);
+        input = input.slice(0, cursorIndex) + remaining;
+        terminal.write(`${remaining} \x1b[${remaining.length + 1}D`);
+      }
+      return;
+    }
+    if (data === '\u001b[H' || data === '\u001b[1~' || data === '\u001b[1;5H' || data === '\u0001') { cursorIndex = 0; redrawInputAtCursor(); return; }
+    if (data === '\u001b[F' || data === '\u001b[4~' || data === '\u001b[1;5F' || data === '\u0005') { cursorIndex = input.length; redrawInputAtCursor(); return; }
     if (data === '\t') { autocomplete(); return; }
     if (data === '\u001b[A') { historyIndex = Math.max(0, historyIndex - 1); input = history[historyIndex] || ''; redrawInput(); return; }
     if (data === '\u001b[B') { historyIndex = Math.min(history.length, historyIndex + 1); input = history[historyIndex] || ''; redrawInput(); return; }
-    if (data === '\u001b[C' || data === '\u001b[D') return;
-    if (!data.includes('\u001b')) { input += data.replace(/[\r\n]/g, ''); terminal.write(data.replace(/[\r\n]/g, '')); }
+    if (data === '\u001b[C') { if (cursorIndex < input.length) { cursorIndex += 1; terminal.write('\x1b[C'); } return; }
+    if (data === '\u001b[D') { if (cursorIndex > 0) { cursorIndex -= 1; terminal.write('\x1b[D'); } return; }
+    if (!data.includes('\u001b')) {
+      const inserted = data.replace(/[\r\n]/g, '');
+      if (inserted) {
+        const remaining = input.slice(cursorIndex);
+        input = input.slice(0, cursorIndex) + inserted + remaining;
+        cursorIndex += inserted.length;
+        terminal.write(`${inserted}${remaining}${remaining.length ? `\x1b[${remaining.length}D` : ''}`);
+      }
+    }
+  }
+
+  function redrawInputAtCursor() {
+    const remaining = input.length - cursorIndex;
+    redrawInput();
+    if (remaining) {
+      cursorIndex -= remaining;
+      terminal.write(`\x1b[${remaining}D`);
+    }
   }
 
   function reset() {
@@ -1027,9 +1414,13 @@
     Object.assign(fileSystem, JSON.parse(initialFileSystem));
     currentDirectory = '/home/secadmin';
     input = '';
+    cursorIndex = 0;
     history = [];
     historyIndex = 0;
+    clearAttackTimers();
     installedServers = [];
+    updateSecurityIndicators(null);
+    renderBlockedLogs();
     localSession.installedPackages = { ...basePackages };
     pendingSshAuth = null;
     pendingSshPassword = '';
@@ -1043,7 +1434,9 @@
     initializeAppData();
     showServerInfo();
     codeOutput.replaceChildren();
+    attackLayer.replaceChildren();
     serverLayer.replaceChildren();
+    clearMonitorOutput();
     terminal.clear();
     boot();
   }
