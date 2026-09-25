@@ -170,8 +170,19 @@
     },
   };
 
-  const commandNames = ['addsuperuser', 'analyzemonitor', 'blockip', 'cat', 'cd', 'clear', 'configserver', 'date', 'deployservice', 'echo', 'exit', 'help', 'history', 'hostname', 'incidentreport', 'installserver', 'integritycheck', 'lockserver', 'ls', 'man', 'mkdir', 'neofetch', 'pwd', 'reset', 'restoreservice', 'rm', 'ssh', 'startmonitor', 'touch', 'tracert', 'uname', 'whoami', 'which'];
-  const remoteCommands = new Set(['help', 'ls', 'cd', 'pwd', 'cat', 'touch', 'mkdir', 'rm', 'echo', 'date', 'whoami', 'uname', 'neofetch', 'history', 'man', 'ssh']);
+  const basePackages = {
+    apt: '2.7.14', 'base-files': '13ubuntu10', bash: '5.2.21-2ubuntu4', coreutils: '9.4-3ubuntu6',
+    curl: '8.5.0-2ubuntu10', 'openssh-client': '1:9.6p1-3ubuntu13', 'openssh-server': '1:9.6p1-3ubuntu13',
+    sudo: '1.9.15p5-3ubuntu5',
+  };
+  const aptUpgradePackages = {
+    'base-files': '13ubuntu10.1', bash: '5.2.21-2ubuntu4.1', coreutils: '9.4-3ubuntu6.1',
+    curl: '8.5.0-2ubuntu10.2', 'openssh-client': '1:9.6p1-3ubuntu13.3', 'openssh-server': '1:9.6p1-3ubuntu13.3',
+    sudo: '1.9.15p5-3ubuntu5.1',
+  };
+  const adminToolsPackages = ['admintools', 'fail2ban', 'nmap', 'rkhunter', 'ufw'];
+  const commandNames = ['addsuperuser', 'analyzemonitor', 'blockip', 'cat', 'cd', 'clear', 'configserver', 'date', 'deployservice', 'echo', 'exit', 'help', 'history', 'hostname', 'incidentreport', 'installserver', 'integritycheck', 'lockserver', 'ls', 'man', 'mkdir', 'neofetch', 'pwd', 'reset', 'restoreservice', 'rm', 'ssh', 'startmonitor', 'sudo', 'touch', 'tracert', 'uname', 'whoami', 'which'];
+  const remoteCommands = new Set(['help', 'ls', 'cd', 'pwd', 'cat', 'touch', 'mkdir', 'rm', 'echo', 'date', 'whoami', 'uname', 'neofetch', 'history', 'man', 'ssh', 'sudo']);
   const initialFileSystem = JSON.stringify(fileSystem);
   let currentDirectory = '/home/secadmin';
   let input = '';
@@ -245,6 +256,7 @@
       terminal: sessionTerminal, fitAddon: sessionFitAddon, container, tab, hostname,
       currentDirectory: '/home/secadmin', input: '', history: [], historyIndex: 0,
       pendingSshAuth: null, pendingSshPassword: '', activeSshHost: hostname,
+      installedPackages: { ...basePackages },
     };
     terminalSessions.push(session);
     tab.addEventListener('click', () => activateSession(session));
@@ -532,8 +544,8 @@
         installationTimers.delete(installationTimer);
         completeInstallation();
       }
-    }, 500);
-    installationTimers.add(installationTimer);
+    }, 200);
+    installationTimers.add(installationTimers);
     print(`${colors.green}Remote-Installation wurde gestartet${colors.reset}`);
   };
   const addSuperuser = (args) => {
@@ -678,6 +690,78 @@
     });
   }
 
+  const writeAptLines = (session, lines) => lines.reduce((pending, line) => pending.then(() => new Promise((resolve) => {
+    window.setTimeout(() => {
+      if (!terminalSessions.includes(session)) { resolve(); return; }
+      session.terminal.writeln(line, () => {
+        session.terminal.scrollToBottom();
+        resolve();
+      });
+    }, 100);
+  })), Promise.resolve());
+
+  function runApt(session, args) {
+    const [action, ...packages] = args;
+    if (!action) return writeAptLines(session, ['apt 2.7.14 (amd64)', 'Usage: apt [options] command', '       apt update | upgrade | install <package>']);
+    if (action === 'update') {
+      const upgradableCount = Object.entries(aptUpgradePackages).filter(([name, version]) => session.installedPackages[name] && session.installedPackages[name] !== version).length;
+      return writeAptLines(session, [
+        `${colors.muted}Hit:1 http://archive.ptuxos.de/ptuxos InRelease${colors.reset}`,
+        `${colors.green}Get:2 http://archive.ptuxos.de/ptuxos-updates InRelease [126 kB]${colors.reset}`,
+        `${colors.green}Get:3 http://security.ptuxos.de/ptuxos-security InRelease [126 kB]${colors.reset}`,
+        'Fetched 252 kB in 1s (361 kB/s)', 'Reading package lists... Done', 'Building dependency tree... Done',
+        'Reading state information... Done', `${upgradableCount} packages can be upgraded. Run 'apt list --upgradable' to see them.`,
+      ]);
+    }
+    if (action === 'upgrade') {
+      const upgrades = Object.entries(aptUpgradePackages).filter(([name, version]) => session.installedPackages[name] && session.installedPackages[name] !== version);
+      if (!upgrades.length) return writeAptLines(session, [
+        'Reading package lists... Done', 'Building dependency tree... Done', 'Reading state information... Done',
+        'Calculating upgrade... Done', '0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.',
+      ]);
+      const names = upgrades.map(([name]) => name);
+      const lines = [
+        'Reading package lists... Done', 'Building dependency tree... Done', 'Reading state information... Done',
+        'Calculating upgrade... Done', 'The following packages will be upgraded:', `  ${names.join(' ')}`,
+        `${names.length} upgraded, 0 newly installed, 0 to remove and 0 not upgraded.`,
+        'Need to get 12.4 MB of archives.', 'After this operation, 4096 B of additional disk space will be used.',
+        ...upgrades.map(([name, version], index) => `Get:${index + 1} http://archive.ptuxos.de/ptuxos-updates/main amd64 ${name} ${version} [${index + 1} MB]`),
+        'Fetched 12.4 MB in 2s (6,200 kB/s)',
+        ...upgrades.flatMap(([name]) => [`Preparing to unpack .../${name}.deb ...`, `Unpacking ${name} ...`]),
+        ...upgrades.map(([name]) => `Setting up ${name} ...`), 'Processing triggers for man-db ...',
+      ];
+      return writeAptLines(session, lines).then(() => upgrades.forEach(([name, version]) => { session.installedPackages[name] = version; }));
+    }
+    if (action === 'install') {
+      if (!packages.length) return writeAptLines(session, ['Reading package lists... Done', 'Building dependency tree... Done', 'Reading state information... Done', 'E: At least one package name is required.']);
+      const unknownPackage = packages.find((name) => name !== 'admintools');
+      if (unknownPackage) return writeAptLines(session, [
+        'Reading package lists... Done', 'Building dependency tree... Done', 'Reading state information... Done',
+        `E: Unable to locate package ${unknownPackage}`,
+      ]);
+      const alreadyInstalled = session.installedPackages.admintools;
+      if (alreadyInstalled) return writeAptLines(session, [
+        'Reading package lists... Done', 'Building dependency tree... Done', 'Reading state information... Done',
+        'admintools is already the newest version (1.0).', '0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.',
+      ]);
+      const additionalPackages = adminToolsPackages.filter((name) => name !== 'admintools' && !session.installedPackages[name]);
+      const newPackages = ['admintools', ...additionalPackages];
+      const lines = [
+        'Reading package lists... Done', 'Building dependency tree... Done', 'Reading state information... Done',
+        'The following additional packages will be installed:', `  ${additionalPackages.join(' ')}`,
+        'The following NEW packages will be installed:', `  ${newPackages.join(' ')}`,
+        `0 upgraded, ${newPackages.length} newly installed, 0 to remove and 0 not upgraded.`,
+        'Need to get 6,248 kB of archives.', 'After this operation, 27.4 MB of additional disk space will be used.',
+        ...newPackages.map((name, index) => `Get:${index + 1} http://archive.ptuxos.de/ptuxos/universe amd64 ${name} 1.0 [${index + 1} MB]`),
+        'Fetched 6,248 kB in 1s (6,248 kB/s)',
+        ...newPackages.flatMap((name) => [`Selecting previously unselected package ${name}.`, `Preparing to unpack .../${name}.deb ...`, `Unpacking ${name} ...`]),
+        ...newPackages.map((name) => `Setting up ${name} ...`), 'Processing triggers for man-db ...',
+      ];
+      return writeAptLines(session, lines).then(() => newPackages.forEach((name) => { session.installedPackages[name] = '1.0'; }));
+    }
+    return writeAptLines(session, [`E: Invalid operation ${action}`]);
+  }
+
   function listDirectory(path, showAll, longFormat) {
     const node = getNode(path);
     if (!node) return `${colors.orange}ls: cannot access '${path}': No such file or directory${colors.reset}`;
@@ -710,7 +794,7 @@
       if (activeSshHost) {
         print(`${colors.brightGreen}ptux shell${colors.reset} ${colors.dim}:: available commands${colors.reset}`);
         print('');
-        [['help', 'show this command list'], ['ls', 'list directory contents'], ['cd', 'change directory'], ['pwd', 'print working directory'], ['cat', 'print file contents'], ['touch', 'create an empty file'], ['mkdir', 'create a directory'], ['rm', 'remove a file or directory'], ['echo', 'print text'], ['date', 'show local date and time'], ['whoami', 'print current user'], ['uname', 'print system information'], ['neofetch', 'show system summary'], ['history', 'show command history'], ['man', 'open a compact manual'], ['ssh', 'connect to a simulated remote server']].forEach(([name, description]) => print(`  ${colors.green}${name.padEnd(10)}${colors.reset} ${description}`));
+        [['help', 'show this command list'], ['ls', 'list directory contents'], ['cd', 'change directory'], ['pwd', 'print working directory'], ['cat', 'print file contents'], ['touch', 'create an empty file'], ['mkdir', 'create a directory'], ['rm', 'remove a file or directory'], ['echo', 'print text'], ['date', 'show local date and time'], ['whoami', 'print current user'], ['uname', 'print system information'], ['neofetch', 'show system summary'], ['history', 'show command history'], ['man', 'open a compact manual'], ['sudo apt', 'update, upgrade or install simulated packages'], ['ssh', 'connect to a simulated remote server']].forEach(([name, description]) => print(`  ${colors.green}${name.padEnd(10)}${colors.reset} ${description}`));
         return;
       }
       print(`${colors.brightGreen}ptux shell${colors.reset} ${colors.dim}:: available commands${colors.reset}`);
@@ -730,6 +814,7 @@
       print(`  ${colors.green}neofetch${colors.reset}    show system summary`);
       print(`  ${colors.green}history${colors.reset}     show command history`);
       print(`  ${colors.green}man${colors.reset}         open a compact manual`);
+      print(`  ${colors.green}sudo apt${colors.reset}     update, upgrade or install simulated packages`);
       print(`  ${colors.green}installserver${colors.reset} install a simulated ptuXOS server`);
       print(`  ${colors.green}ssh${colors.reset}         connect to a simulated remote server`);
       print(`  ${colors.green}addsuperuser${colors.reset}  create a simulated sudo user`);
@@ -744,6 +829,11 @@
       print(`  ${colors.green}incidentreport${colors.reset} save an incident report`);
       print(`  ${colors.green}reset simulation${colors.reset} clear the complete simulation state`);
       return;
+    }
+    if (command === 'sudo') {
+      const utility = args.shift();
+      if (utility !== 'apt') return writeAptLines(activeSession, [`sudo: ${utility || 'command'}: command not found`]);
+      return runApt(activeSession, args);
     }
     if (command === 'installserver') return installServer(args);
     if (command === 'ssh') return startSshLogin(args);
@@ -873,9 +963,19 @@
       const execution = execute(commandLine);
       if (execution === 'ssh-password-prompt') { input = ''; return; }
       if (execution?.then) {
+        const commandSession = activeSession;
+        const commandPrompt = prompt();
         execution.then(() => {
-          input = '';
-          writePrompt();
+          commandSession.input = '';
+          if (activeSession === commandSession) input = '';
+          const restorePrompt = () => commandSession.terminal.write(`\r\n${commandPrompt}`, () => commandSession.terminal.scrollToBottom());
+          if (activeSession === commandSession) {
+            window.requestAnimationFrame(() => {
+              commandSession.fitAddon.fit();
+              commandSession.terminal.scrollToBottom();
+              restorePrompt();
+            });
+          } else restorePrompt();
         });
         return;
       }
@@ -930,6 +1030,7 @@
     history = [];
     historyIndex = 0;
     installedServers = [];
+    localSession.installedPackages = { ...basePackages };
     pendingSshAuth = null;
     pendingSshPassword = '';
     activeSshHost = '';
