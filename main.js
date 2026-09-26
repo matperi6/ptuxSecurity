@@ -173,10 +173,19 @@
     line.textContent = message;
     monitorOutput.appendChild(line);
     monitorOutput.scrollTop = monitorOutput.scrollHeight;
+    return line;
   };
-  const appendServerMonitorMessage = (server, message, kind) => {
+  const appendServerMonitorMessage = (server, message, kind, color) => {
     if (!terminalSessions.some((session) => session.hostname === server.hostname)) return;
-    appendMonitorMessage(message, kind);
+    const line = appendMonitorMessage(message, kind);
+    if (color) line.style.color = color;
+  };
+  const attackMessageColor = (attempts) => {
+    const start = [131, 223, 114];
+    const end = [255, 119, 119];
+    const progress = Math.max(0, Math.min(1, (attempts - 9) / 16));
+    const channels = start.map((value, index) => Math.round(value + (end[index] - value) * progress));
+    return `rgb(${channels.join(', ')})`;
   };
   const appendBlockedLog = (server, attacker) => {
     blockedLogs.querySelector('.empty-state')?.remove();
@@ -232,7 +241,8 @@
       currentAttacker.attempts += 1;
       currentAttacker.active = true;
       currentAttacker.activeUntil = Date.now() + 600;
-      appendServerMonitorMessage(targetServer, `${currentAttacker.ip} aus ${currentAttacker.city}: Angriff auf ${targetServer.hostname} (${currentAttacker.attempts}/${currentAttacker.maxAttempts})`, 'attack');
+      const messageType = currentAttacker.attempts >= 25 ? 'Angriff von' : 'Anfrage an';
+      appendServerMonitorMessage(targetServer, `${currentAttacker.ip} aus ${currentAttacker.city}: ${messageType} ${targetServer.hostname} (${currentAttacker.attempts}/${currentAttacker.maxAttempts})`, 'attack', attackMessageColor(currentAttacker.attempts));
       const flashTimer = window.setTimeout(() => {
         attackFlashTimers.delete(flashTimer);
         currentAttacker.active = false;

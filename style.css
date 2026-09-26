@@ -99,7 +99,7 @@ button { cursor: pointer; }
 .blocked-log-entry { padding-bottom: 5px; border-bottom: 1px solid var(--line); color: #ff7777; overflow-wrap: anywhere; }
 .monitor-output { position: absolute; inset: 44px 12px 12px; display: flex; flex-direction: column; align-items: stretch; gap: 6px; overflow-y: auto; color: var(--muted); font: 10px/1.5 'DM Mono', monospace; }
 .monitor-line { padding-bottom: 5px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
-.monitor-line.attack, .monitor-line.ban { color: #ff7777; }
+.monitor-line.ban { color: #ff7777; }
 .monitor-indicators { position: absolute; z-index: 4; top: 10px; right: 12px; display: flex; align-items: center; gap: 10px; color: var(--muted); font: 9px 'DM Mono', monospace; }
 .monitor-indicators span { display: inline-flex; align-items: center; gap: 4px; }
 .monitor-status { width: 8px; height: 8px; border-radius: 50%; background: #e14b52; box-shadow: 0 0 5px rgba(225, 75, 82, .55); }
