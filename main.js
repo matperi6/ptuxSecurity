@@ -463,8 +463,8 @@
     sudo: '1.9.15p5-3ubuntu5.1',
   };
   const adminToolsPackages = ['admintools', 'fail2ban', 'nmap', 'rkhunter', 'ufw'];
-  const commandNames = ['addsuperuser', 'analyzemonitor', 'blockip', 'cat', 'cd', 'clear', 'configserver', 'date', 'deployservice', 'echo', 'exit', 'help', 'history', 'hostname', 'incidentreport', 'installserver', 'integritycheck', 'lockserver', 'ls', 'man', 'mkdir', 'neofetch', 'pwd', 'reset', 'restoreservice', 'rm', 'secureserver', 'ssh', 'startmonitor', 'sudo', 'touch', 'tracert', 'uname', 'whoami', 'which'];
-  const remoteCommands = new Set(['help', 'ls', 'cd', 'pwd', 'cat', 'touch', 'mkdir', 'rm', 'echo', 'date', 'whoami', 'uname', 'neofetch', 'history', 'man', 'ssh', 'sudo', 'secureserver']);
+  const commandNames = ['addsuperuser', 'analyzemonitor', 'blockip', 'cat', 'cd', 'clear', 'configserver', 'date', 'deployservice', 'echo', 'exit', 'help', 'history', 'hostname', 'incidentreport', 'installserver', 'integritycheck', 'lockserver', 'ls', 'man', 'mkdir', 'ptuxfetch', 'pwd', 'reset', 'restoreservice', 'rm', 'secureserver', 'ssh', 'startmonitor', 'sudo', 'touch', 'tracert', 'uname', 'whoami', 'which'];
+  const remoteCommands = new Set(['help', 'ls', 'cd', 'pwd', 'cat', 'touch', 'mkdir', 'rm', 'echo', 'date', 'whoami', 'uname', 'ptuxfetch', 'history', 'man', 'ssh', 'sudo', 'secureserver']);
   const initialFileSystem = JSON.stringify(fileSystem);
   let currentDirectory = '/home/secadmin';
   let input = '';
@@ -540,6 +540,7 @@
     sessionTerminal.open(container);
     const session = {
       terminal: sessionTerminal, fitAddon: sessionFitAddon, container, tab, hostname,
+      createdAt: Date.now(),
       currentDirectory: '/home/secadmin', input: '', cursorIndex: 0, history: [], historyIndex: 0,
       pendingSshAuth: null, pendingSshPassword: '', activeSshHost: hostname,
       installedPackages: { ...basePackages },
@@ -833,7 +834,7 @@
     let step = 0;
     appendCodeLine(`[installserver] PXE-Installation gestartet: ${hostname}`, 'output');
     const completeInstallation = async () => {
-      const server = { os, ip, hostname, datacenter };
+      const server = { os, ip, hostname, datacenter, createdAt: Date.now() };
       const safeEntry = { hostname, ...credentials };
       infoSafeEntries.push(safeEntry);
       try {
@@ -1149,7 +1150,7 @@
       if (activeSshHost) {
         print(`${colors.brightGreen}ptux shell${colors.reset} ${colors.dim}:: available commands${colors.reset}`);
         print('');
-        [['help', 'show this command list'], ['ls', 'list directory contents'], ['cd', 'change directory'], ['pwd', 'print working directory'], ['cat', 'print file contents'], ['touch', 'create an empty file'], ['mkdir', 'create a directory'], ['rm', 'remove a file or directory'], ['echo', 'print text'], ['date', 'show local date and time'], ['whoami', 'print current user'], ['uname', 'print system information'], ['neofetch', 'show system summary'], ['history', 'show command history'], ['man', 'open a compact manual'], ['sudo apt', 'update, upgrade or install simulated packages'], ['secureserver', 'activate firewall and fail2ban'], ['ssh', 'connect to a simulated remote server']].forEach(([name, description]) => print(`  ${colors.green}${name.padEnd(10)}${colors.reset} ${description}`));
+        [['help', 'show this command list'], ['ls', 'list directory contents'], ['cd', 'change directory'], ['pwd', 'print working directory'], ['cat', 'print file contents'], ['touch', 'create an empty file'], ['mkdir', 'create a directory'], ['rm', 'remove a file or directory'], ['echo', 'print text'], ['date', 'show local date and time'], ['whoami', 'print current user'], ['uname', 'print system information'], ['ptuxfetch', 'show system summary'], ['history', 'show command history'], ['man', 'open a compact manual'], ['sudo apt', 'update, upgrade or install simulated packages'], ['secureserver', 'activate firewall and fail2ban'], ['ssh', 'connect to a simulated remote server']].forEach(([name, description]) => print(`  ${colors.green}${name.padEnd(10)}${colors.reset} ${description}`));
         return;
       }
       print(`${colors.brightGreen}ptux shell${colors.reset} ${colors.dim}:: available commands${colors.reset}`);
@@ -1166,7 +1167,7 @@
       print(`  ${colors.green}date${colors.reset}        show local date and time`);
       print(`  ${colors.green}whoami${colors.reset}      print current user`);
       print(`  ${colors.green}uname${colors.reset}       print system information`);
-      print(`  ${colors.green}neofetch${colors.reset}    show system summary`);
+      print(`  ${colors.green}ptuxfetch${colors.reset}   show system summary`);
       print(`  ${colors.green}history${colors.reset}     show command history`);
       print(`  ${colors.green}man${colors.reset}         open a compact manual`);
       print(`  ${colors.green}sudo apt${colors.reset}     update, upgrade or install simulated packages`);
@@ -1262,14 +1263,52 @@
     if (command === 'history') { history.forEach((item, index) => print(`  ${(index + 1).toString().padStart(3, ' ')}  ${item}`)); return; }
     if (command === 'which') { print(args[0] ? `/usr/bin/${args[0]}` : `${colors.orange}which: missing argument${colors.reset}`); return; }
     if (command === 'man') { print(`${colors.green}Manual: ${args[0] || 'ptux'}${colors.reset}\nTry ${colors.brightGreen}help${colors.reset} for supported commands. This is a browser shell, not a real system.`); return; }
-    if (command === 'neofetch') {
-      print(`${colors.green}        .--.       ${colors.brightGreen}secadmin@localpc${colors.reset}`);
-      print(`${colors.green}       |o_o |      ${colors.dim}----------------${colors.reset}`);
-      print(`${colors.green}       |:_/ |      ${colors.blue}OS${colors.reset}: ptux Linux 1.0`);
-      print(`${colors.green}      //   \\ \\     ${colors.blue}Host${colors.reset}: Browser`);
-      print(`${colors.green}     (|     | )    ${colors.blue}Shell${colors.reset}: bash-like`);
-      print(`${colors.green}    /'\\_   _/\\\\    ${colors.blue}Term${colors.reset}: xterm.js`);
-      print(`${colors.green}    \\___)=(___/    ${colors.blue}Mode${colors.reset}: ${colors.brightGreen}offline${colors.reset}`);
+    if (command === 'ptuxfetch') {
+      const server = installedServers.find((entry) => entry.hostname === activeSshHost);
+      const hostname = server?.hostname ?? (activeSshHost || 'localpc');
+      const user = activeSshHost ? `${activeSshHost}admin` : 'secadmin';
+      const kind = activeSshHost ? 'Server' : 'PC';
+      const ip = server?.ip || '0.0.0.0';
+      const mask = server?.mask || '255.255.255.0';
+      const mac = server?.mac || '00:00:00:00:00:00';
+      const createdAt = server?.createdAt ?? activeSession?.createdAt ?? Date.now();
+      const uptimeMin = Math.max(0, Math.floor((Date.now() - createdAt) / 60000));
+      const uptime = uptimeMin < 1 ? '< 1 Minute' : uptimeMin < 60 ? `${uptimeMin} Minuten` : `${Math.floor(uptimeMin / 60)}h ${uptimeMin % 60}m`;
+      const reset = '\x1b[0m';
+      const bold = '\x1b[1m';
+      const logoColor = '\x1b[1;36m';
+      const labelColor = '\x1b[1;36m';
+      const logoLines = [
+        '       _        __  __',
+        ' _ __ | |_ _   _\\ \\/ /',
+        "| '_ \\| __| | | |\\  /",
+        '| |_) | |_| |_| |/  \\ ',
+        '| .__/ \\__|\\__,_/_/\\_\\ ',
+        '|_|',
+      ];
+      const logoWidth = Math.max(...logoLines.map((line) => line.length));
+      const infoLines = [
+        `${bold}${user}@${hostname}${reset}`,
+        '-'.repeat(`${user}@${hostname}`.length),
+        `${labelColor}OS${reset}: ptuXOS 1.04`,
+        `${labelColor}Host${reset}: ptuX Virtual ${kind}`,
+        `${labelColor}Kernel${reset}: 6.8.0-ptuX`,
+        `${labelColor}Shell${reset}: ptuXBash 1.01`,
+        `${labelColor}Terminal${reset}: xterm.js`,
+        `${labelColor}CPU${reset}: vCPU @ 3.00GHz`,
+        `${labelColor}Memory${reset}: 128MiB / 512MiB`,
+        `${labelColor}Uptime${reset}: ${uptime}`,
+        `${labelColor}IP (eth0)${reset}: ${ip} / ${mask}`,
+        `${labelColor}MAC (eth0)${reset}: ${mac}`,
+      ];
+      const rowCount = Math.max(logoLines.length, infoLines.length);
+      const rows = [];
+      for (let index = 0; index < rowCount; index += 1) {
+        const logoLine = logoLines[index] ?? '';
+        const infoLine = infoLines[index] ?? '';
+        rows.push(`${logoColor}${logoLine.padEnd(logoWidth, ' ')}${reset}  ${infoLine}`);
+      }
+      print(rows.join('\n'));
       return;
     }
     if (command === 'exit') {
