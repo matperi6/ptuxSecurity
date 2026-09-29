@@ -118,7 +118,7 @@
     installedServers.forEach((server) => {
       if (!server.datacenter) return;
       const [x, y] = project(server.datacenter.lon, server.datacenter.lat);
-      (server.attackers || []).forEach((attacker) => {
+      (server.securityOutputHidden ? [] : server.attackers || []).forEach((attacker) => {
         if (!attacker.visible && !attacker.banned) return;
         const [attackerX, attackerY] = project(attacker.lon, attacker.lat);
         if (!attacker.banned) {
@@ -176,7 +176,7 @@
     return line;
   };
   const appendServerMonitorMessage = (server, message, kind, color) => {
-    if (!terminalSessions.some((session) => session.hostname === server.hostname)) return;
+    if (server.securityOutputHidden || !terminalSessions.some((session) => session.hostname === server.hostname)) return;
     const line = appendMonitorMessage(message, kind);
     if (color) line.style.color = color;
   };
@@ -188,6 +188,7 @@
     return `rgb(${channels.join(', ')})`;
   };
   const appendBlockedLog = (server, attacker) => {
+    if (server.securityOutputHidden) return;
     blockedLogs.querySelector('.empty-state')?.remove();
     const entry = document.createElement('div');
     entry.className = 'blocked-log-entry';
@@ -197,7 +198,7 @@
   };
   const renderBlockedLogs = () => {
     blockedLogs.replaceChildren();
-    const entries = installedServers.flatMap((server) => (server.attackers || [])
+    const entries = installedServers.flatMap((server) => (server.securityOutputHidden ? [] : server.attackers || [])
       .filter((attacker) => attacker.banned)
       .map((attacker) => ({ server, attacker }))
     ).sort((left, right) => (left.attacker.bannedAt || 0) - (right.attacker.bannedAt || 0));
@@ -226,6 +227,7 @@
     monitorOutput.appendChild(empty);
   };
   const scheduleAttackerAttempt = (server, attacker, nextAt) => {
+    if (server.securityOutputHidden) return;
     const timerKey = `${server.hostname}:${attacker.ip}`;
     if (attacker.banned || attackTimers.has(timerKey)) return;
     attacker.nextAttackAt = nextAt;
@@ -234,7 +236,7 @@
       attackTimers.delete(timerKey);
       const targetServer = installedServers.find((entry) => entry.hostname === server.hostname);
       const currentAttacker = targetServer?.attackers?.find((entry) => entry.ip === attacker.ip);
-      if (!targetServer?.firewallActive || !targetServer.fail2banActive || !currentAttacker || currentAttacker.banned) return;
+      if (!targetServer?.firewallActive || !targetServer.fail2banActive || targetServer.securityOutputHidden || !currentAttacker || currentAttacker.banned) return;
       currentAttacker.visible = true;
       currentAttacker.attempts ??= 0;
       currentAttacker.maxAttempts = 30;
@@ -265,6 +267,7 @@
     attackTimers.set(timerKey, timer);
   };
   const scheduleNextAttackerArrival = (server, nextAt) => {
+    if (server.securityOutputHidden) return;
     const timerKey = `${server.hostname}:spawner`;
     if (attackTimers.has(timerKey)) return;
     server.attackerSpawnAt = nextAt;
@@ -272,7 +275,7 @@
     const timer = window.setTimeout(() => {
       attackTimers.delete(timerKey);
       const targetServer = installedServers.find((entry) => entry.hostname === server.hostname);
-      if (!targetServer?.firewallActive || !targetServer.fail2banActive) return;
+      if (!targetServer?.firewallActive || !targetServer.fail2banActive || targetServer.securityOutputHidden) return;
       const existingIps = new Set((targetServer.attackers || []).map((attacker) => attacker.ip));
       const origin = attackerOrigins[randomInteger(0, attackerOrigins.length - 1)];
       const attacker = createAttackingComputer(origin, existingIps);
@@ -287,6 +290,7 @@
     attackTimers.set(timerKey, timer);
   };
   const scheduleAttackSimulation = (server, delay = 3500) => {
+    if (server.securityOutputHidden) return;
     if (server.attackers?.length) {
       server.attackerSpawnAt ??= Date.now() + randomInteger(10000, 20000);
       server.attackers.forEach((attacker) => {
@@ -317,7 +321,7 @@
     attackTimers.set(server.hostname, timer);
   };
   const resumePendingAttackSimulations = () => {
-    installedServers.filter((server) => server.firewallActive && server.fail2banActive)
+    installedServers.filter((server) => server.firewallActive && server.fail2banActive && !server.securityOutputHidden)
       .forEach((server) => {
         (server.attackers || []).forEach((attacker) => {
           attacker.active = false;
@@ -333,6 +337,14 @@
     attackTimers.clear();
     attackFlashTimers.forEach((timer) => window.clearTimeout(timer));
     attackFlashTimers.clear();
+  };
+  const clearServerAttackTimers = (server) => {
+    for (const [timerKey, timer] of attackTimers) {
+      if (timerKey === server.hostname || timerKey.startsWith(`${server.hostname}:`)) {
+        window.clearTimeout(timer);
+        attackTimers.delete(timerKey);
+      }
+    }
   };
   const drawRoute = (target) => {
     routeLayer.replaceChildren();
@@ -946,8 +958,9 @@
     return true;
   };
   const secureServer = (args) => {
-    if (args.length) {
-      print(`${colors.orange}secureserver: usage: secureserver${colors.reset}`);
+    const [displayMode = 'show'] = args;
+    if (args.length > 1 || !['hide', 'show'].includes(displayMode)) {
+      print(`${colors.orange}secureserver: usage: secureserver [hide|show]${colors.reset}`);
       return;
     }
     if (!activeSshHost) {
@@ -963,21 +976,24 @@
       print(`${colors.orange}secureserver: zuerst 'sudo apt install admintools' ausführen.${colors.reset}`);
       return;
     }
-    const protectionsWereActive = server.firewallActive && server.fail2banActive;
+    server.securityOutputHidden = displayMode === 'hide';
     server.firewallActive = true;
     server.fail2banActive = true;
-    if (!server.attackers?.length) server.attackScheduledAt ??= Date.now() + 3500;
     saveServers();
     updateSecurityIndicators(server);
-    appendCodeLine(`[secureserver] ufw --enable --target ${server.hostname}`);
-    appendCodeLine(`[secureserver] fail2ban-client start --target ${server.hostname}`);
-    print(`${colors.green}Firewall und fail2ban auf ${server.hostname} sind aktiv.${colors.reset}`);
-    if (!protectionsWereActive) {
+    if (server.securityOutputHidden) {
+      clearServerAttackTimers(server);
+    } else {
+      appendCodeLine(`[secureserver] ufw --enable --target ${server.hostname}`);
+      appendCodeLine(`[secureserver] fail2ban-client start --target ${server.hostname}`);
       appendMonitorMessage(`Firewall aktiv: eingehende Verbindungen auf ${server.hostname} werden geprüft.`);
       appendMonitorMessage(`fail2ban aktiv: Authentifizierungsversuche auf ${server.hostname} werden überwacht.`);
+      scheduleAttackSimulation(server);
     }
-    scheduleAttackSimulation(server);
-    reportGameEvent('secureserver', [], { server });
+    drawServerMarkers();
+    renderBlockedLogs();
+    print(`${colors.green}Firewall und fail2ban auf ${server.hostname} sind aktiv.${colors.reset}`);
+    reportGameEvent('secureserver', args, { server });
   };
   const resetSimulation = () => {
     installationTimers.forEach((timer) => window.clearInterval(timer));
@@ -1058,6 +1074,10 @@
 
   function runApt(session, args) {
     const [action, ...packages] = args;
+    const reportAptCommand = () => {
+      const server = activeSshHost && installedServers.find((entry) => entry.hostname === activeSshHost);
+      if (server) reportGameEvent('apt', [action, ...packages], { server });
+    };
     if (!action) return writeAptLines(session, ['apt 2.7.14 (amd64)', 'Usage: apt [options] command', '       apt update | upgrade | install <package>']);
     if (action === 'update') {
       const upgradableCount = Object.entries(aptUpgradePackages).filter(([name, version]) => session.installedPackages[name] && session.installedPackages[name] !== version).length;
@@ -1067,14 +1087,14 @@
         `${colors.green}Get:3 http://security.ptuxos.de/ptuxos-security InRelease [126 kB]${colors.reset}`,
         'Fetched 252 kB in 1s (361 kB/s)', 'Reading package lists... Done', 'Building dependency tree... Done',
         'Reading state information... Done', `${upgradableCount} packages can be upgraded. Run 'apt list --upgradable' to see them.`,
-      ]);
+      ]).then(reportAptCommand);
     }
     if (action === 'upgrade') {
       const upgrades = Object.entries(aptUpgradePackages).filter(([name, version]) => session.installedPackages[name] && session.installedPackages[name] !== version);
       if (!upgrades.length) return writeAptLines(session, [
         'Reading package lists... Done', 'Building dependency tree... Done', 'Reading state information... Done',
         'Calculating upgrade... Done', '0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.',
-      ]);
+      ]).then(reportAptCommand);
       const names = upgrades.map(([name]) => name);
       const lines = [
         'Reading package lists... Done', 'Building dependency tree... Done', 'Reading state information... Done',
@@ -1086,7 +1106,10 @@
         ...upgrades.flatMap(([name]) => [`Preparing to unpack .../${name}.deb ...`, `Unpacking ${name} ...`]),
         ...upgrades.map(([name]) => `Setting up ${name} ...`), 'Processing triggers for man-db ...',
       ];
-      return writeAptLines(session, lines).then(() => upgrades.forEach(([name, version]) => { session.installedPackages[name] = version; }));
+      return writeAptLines(session, lines).then(() => {
+        upgrades.forEach(([name, version]) => { session.installedPackages[name] = version; });
+        reportAptCommand();
+      });
     }
     if (action === 'install') {
       if (!packages.length) return writeAptLines(session, ['Reading package lists... Done', 'Building dependency tree... Done', 'Reading state information... Done', 'E: At least one package name is required.']);
@@ -1099,7 +1122,7 @@
       if (alreadyInstalled) return writeAptLines(session, [
         'Reading package lists... Done', 'Building dependency tree... Done', 'Reading state information... Done',
         'admintools is already the newest version (1.0).', '0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.',
-      ]);
+      ]).then(reportAptCommand);
       const additionalPackages = adminToolsPackages.filter((name) => name !== 'admintools' && !session.installedPackages[name]);
       const newPackages = ['admintools', ...additionalPackages];
       const lines = [
@@ -1113,7 +1136,10 @@
         ...newPackages.flatMap((name) => [`Selecting previously unselected package ${name}.`, `Preparing to unpack .../${name}.deb ...`, `Unpacking ${name} ...`]),
         ...newPackages.map((name) => `Setting up ${name} ...`), 'Processing triggers for man-db ...',
       ];
-      return writeAptLines(session, lines).then(() => newPackages.forEach((name) => { session.installedPackages[name] = '1.0'; }));
+      return writeAptLines(session, lines).then(() => {
+        newPackages.forEach((name) => { session.installedPackages[name] = '1.0'; });
+        reportAptCommand();
+      });
     }
     return writeAptLines(session, [`E: Invalid operation ${action}`]);
   }
@@ -1150,7 +1176,7 @@
       if (activeSshHost) {
         print(`${colors.brightGreen}ptux shell${colors.reset} ${colors.dim}:: available commands${colors.reset}`);
         print('');
-        [['help', 'show this command list'], ['ls', 'list directory contents'], ['cd', 'change directory'], ['pwd', 'print working directory'], ['cat', 'print file contents'], ['touch', 'create an empty file'], ['mkdir', 'create a directory'], ['rm', 'remove a file or directory'], ['echo', 'print text'], ['date', 'show local date and time'], ['whoami', 'print current user'], ['uname', 'print system information'], ['ptuxfetch', 'show system summary'], ['history', 'show command history'], ['man', 'open a compact manual'], ['sudo apt', 'update, upgrade or install simulated packages'], ['secureserver', 'activate firewall and fail2ban'], ['ssh', 'connect to a simulated remote server']].forEach(([name, description]) => print(`  ${colors.green}${name.padEnd(10)}${colors.reset} ${description}`));
+        [['help', 'show this command list'], ['ls', 'list directory contents'], ['cd', 'change directory'], ['pwd', 'print working directory'], ['cat', 'print file contents'], ['touch', 'create an empty file'], ['mkdir', 'create a directory'], ['rm', 'remove a file or directory'], ['echo', 'print text'], ['date', 'show local date and time'], ['whoami', 'print current user'], ['uname', 'print system information'], ['ptuxfetch', 'show system summary'], ['history', 'show command history'], ['man', 'open a compact manual'], ['sudo apt', 'update, upgrade or install simulated packages'], ['secureserver', 'activate firewall and fail2ban [hide|show]'], ['ssh', 'connect to a simulated remote server']].forEach(([name, description]) => print(`  ${colors.green}${name.padEnd(10)}${colors.reset} ${description}`));
         return;
       }
       print(`${colors.brightGreen}ptux shell${colors.reset} ${colors.dim}:: available commands${colors.reset}`);
@@ -1175,7 +1201,7 @@
       print(`  ${colors.green}ssh${colors.reset}         connect to a simulated remote server`);
       print(`  ${colors.green}addsuperuser${colors.reset}  create a simulated sudo user`);
       print(`  ${colors.green}configserver${colors.reset}   configure SSH and firewall`);
-      print(`  ${colors.green}secureserver${colors.reset}  activate firewall and fail2ban`);
+      print(`  ${colors.green}secureserver${colors.reset}  activate firewall and fail2ban [hide|show]`);
       print(`  ${colors.green}deployservice${colors.reset} start a web or DNS service`);
       print(`  ${colors.green}startmonitor${colors.reset}  start server monitoring`);
       print(`  ${colors.green}analyzemonitor${colors.reset} inspect security logs`);

@@ -8,7 +8,7 @@ window.PTUX_GAME_DATA = [
     tasks: [
       { id: 'P1_A1', title: 'Server installieren', description: 'Installiere einen Server in einem Rechenzentrum deiner Wahl.', hint: "Nutze den Befehl 'installserver'", command: 'installserver', goal: '1 Server installiert' },
       { id: 'P1_A2', title: 'Mit SSH am Remote-Server anmelden', description: 'Melde dich mit den Zugangsdaten aus dem Info-Safe auf einem installierten Server an.', hint: 'Nutze ssh <hostname>admin@<hostname> und gib das Passwort aus dem Info-Safe an der Passwortabfrage ein.', command: 'ssh', goal: 'SSH-Anmeldung erfolgreich' },
-      { id: 'P1_A3', title: 'Server absichern', description: 'Installiere die Admintools und sichere den Server', hint: "Admintools installieren: 'sudo apt install admintools'. Server absichern: 'secureserver'", command: 'secureserver', goal: 'Firewall und fail2ban aktiv' },
+      { id: 'P1_A3', title: 'Server absichern', description: 'Führe ein Update des Betriebssystems durch. Installiere danach die Admintools und sichere den Server.', hint: "Update des Betriebssystems: 'sudo apt update' und 'sudo apt upgrade'. Admintools installieren: 'sudo apt install admintools'. Server absichern: 'secureserver'", command: 'secureserver', goal: 'Firewall und fail2ban aktiv' },
       { id: 'P1_A4', title: 'Dienste bereitstellen', description: 'Starte Webdienst und DNS-Dienst auf deiner Serverlandschaft.', hint: 'Nutze deployservice <hostname> <dienst> zweimal.', command: 'deployservice', goal: 'Web- und DNS-Dienst bereitgestellt' },
       { id: 'P1_A5', title: 'Monitoring starten', description: 'Aktiviere die Ueberwachung auf allen drei Servern.', hint: 'Nutze startmonitor fuer jeden Server.', command: 'startmonitor', goal: 'Monitoring aktiv' },
     ],

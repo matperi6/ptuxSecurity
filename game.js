@@ -1,6 +1,6 @@
 (() => {
   const phases = window.PTUX_GAME_DATA || [];
-  const state = { phaseIndex: 0, taskIndex: 0, completed: new Set(), servers: new Set(), configured: new Set(), services: new Set(), monitors: new Set(), blockedIps: new Set(), locked: new Set(), analyzed: false, integrityChecked: false, restored: false, reported: false, sshConnected: false, serverSecured: false };
+  const state = { phaseIndex: 0, taskIndex: 0, completed: new Set(), servers: new Set(), configured: new Set(), services: new Set(), monitors: new Set(), blockedIps: new Set(), locked: new Set(), analyzed: false, integrityChecked: false, restored: false, reported: false, sshConnected: false, packageListsUpdated: false, osUpgraded: false, adminToolsInstalled: false, serverSecured: false };
   const aiOutput = document.querySelector('#ai-output');
   const writeAi = (message) => { if (aiOutput) aiOutput.textContent = message; };
   const currentPhase = () => phases[state.phaseIndex];
@@ -32,7 +32,10 @@
     }
     if (task.id === 'P1_A2' && command === 'ssh' && authenticated) state.sshConnected = true;
     if (task.id === 'P1_A3' && command === 'configserver' && args[0]) state.configured.add(args[0]);
-    if (task.id === 'P1_A3' && command === 'secureserver' && server?.firewallActive && server?.fail2banActive) state.serverSecured = true;
+    if (task.id === 'P1_A3' && command === 'apt' && args[0] === 'update' && server) state.packageListsUpdated = true;
+    if (task.id === 'P1_A3' && command === 'apt' && args[0] === 'upgrade' && state.packageListsUpdated && server) state.osUpgraded = true;
+    if (task.id === 'P1_A3' && command === 'apt' && args[0] === 'install' && args[1] === 'admintools' && state.osUpgraded && server) state.adminToolsInstalled = true;
+    if (task.id === 'P1_A3' && command === 'secureserver' && state.adminToolsInstalled && server?.firewallActive && server?.fail2banActive) state.serverSecured = true;
     if (task.id === 'P1_A4' && command === 'deployservice' && args[0] && args[1]) state.services.add(`${args[0]}:${args[1]}`);
     if (task.id === 'P1_A5' && command === 'startmonitor' && args[0]) state.monitors.add(args[0]);
     if (task.id === 'P2_A1' && command === 'analyzemonitor') state.analyzed = true;
@@ -41,11 +44,11 @@
     if (task.id === 'P3_A1' && command === 'integritycheck') state.integrityChecked = true;
     if (task.id === 'P3_A2' && command === 'restoreservice') state.restored = true;
     if (task.id === 'P3_A3' && command === 'incidentreport') state.reported = true;
-    const requirements = { P1_A1: state.servers.size >= 1, P1_A2: state.sshConnected, P1_A3: state.serverSecured, P1_A4: [...state.services].filter((item) => item.endsWith(':web') || item.endsWith(':dns')).length >= 2, P1_A5: state.monitors.size >= 3, P2_A1: state.analyzed, P2_A2: state.blockedIps.size >= 3, P2_A3: state.locked.size >= 1, P3_A1: state.integrityChecked, P3_A2: state.restored, P3_A3: state.reported };
+    const requirements = { P1_A1: state.servers.size >= 1, P1_A2: state.sshConnected, P1_A3: state.packageListsUpdated && state.osUpgraded && state.adminToolsInstalled && state.serverSecured, P1_A4: [...state.services].filter((item) => item.endsWith(':web') || item.endsWith(':dns')).length >= 2, P1_A5: state.monitors.size >= 3, P2_A1: state.analyzed, P2_A2: state.blockedIps.size >= 3, P2_A3: state.locked.size >= 1, P3_A1: state.integrityChecked, P3_A2: state.restored, P3_A3: state.reported };
     if (requirements[task.id]) {
       completeTask();
     }
   };
 
-  window.ptuxGame = { recordCommand: checkTask, start: () => renderTask('Guten Morgen secadmin. Die ptuX-KI begleitet deinen Einsatz.'), reset: () => { state.phaseIndex = 0; state.taskIndex = 0; state.completed.clear(); state.servers.clear(); state.configured.clear(); state.services.clear(); state.monitors.clear(); state.blockedIps.clear(); state.locked.clear(); state.analyzed = false; state.integrityChecked = false; state.restored = false; state.reported = false; state.sshConnected = false; state.serverSecured = false; renderTask('Simulation zurueckgesetzt.'); } };
+  window.ptuxGame = { recordCommand: checkTask, start: () => renderTask('Guten Morgen secadmin. Die ptuX-KI begleitet deinen Einsatz.'), reset: () => { state.phaseIndex = 0; state.taskIndex = 0; state.completed.clear(); state.servers.clear(); state.configured.clear(); state.services.clear(); state.monitors.clear(); state.blockedIps.clear(); state.locked.clear(); state.analyzed = false; state.integrityChecked = false; state.restored = false; state.reported = false; state.sshConnected = false; state.packageListsUpdated = false; state.osUpgraded = false; state.adminToolsInstalled = false; state.serverSecured = false; renderTask('Simulation zurueckgesetzt.'); } };
 })();
