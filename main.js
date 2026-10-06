@@ -14,6 +14,7 @@
   const fail2banStatus = document.querySelector('#fail2ban-status');
   const mapState = { zoom: 0, panX: 0, panY: 0, dragging: false, lastX: 0, lastY: 0 };
   const serverStorageKey = 'ptuxSecurity.servers';
+  const simulationStorageKey = 'ptuxSecurity.simulation';
   const historyStorageKey = 'ptuxSecurity.history';
   const infoSafeStorageKey = 'ptuxSecurity.infoSafe';
   const osImagesStorageKey = 'ptuxSecurity.osImages';
@@ -41,10 +42,13 @@
   let cityData = [];
   let installedServers = [];
   let availableDatacenters = [];
-  const installationTimers = new Set();
+  const installationTimers = new Map();
+  const pendingInstallations = new Map();
   const attackTimers = new Map();
   const attackFlashTimers = new Set();
   let mapDataReady;
+  let routeTarget = null;
+  let restoringSimulation = false;
   const mapScale = () => 50 ** (mapState.zoom / 50);
   const attackColors = [
     '#ff6b6b', '#4dd0e1', '#c6e05b', '#ffb74d', '#ce93d8',
@@ -347,6 +351,7 @@
     }
   };
   const drawRoute = (target) => {
+    routeTarget = target;
     routeLayer.replaceChildren();
     const route = [['Westerstede', 8.11, 53.26], ['Frankfurt DE-CIX', 8.68, 50.11], ['London LINX', -0.12, 51.51], target];
     const points = route.map(([, longitude, latitude]) => project(longitude, latitude));
@@ -366,7 +371,6 @@
       updateSecurityIndicators(installedServers.find((server) => server.hostname === activeSshHost)
         || installedServers.find((server) => server.firewallActive || server.fail2banActive));
       renderBlockedLogs();
-      resumePendingAttackSimulations();
       availableDatacenters = availableDatacenters.filter((datacenter) => !installedServers.some((server) => server.ip === datacenter.ip));
       localStorage.setItem(availableDatacentersStorageKey, JSON.stringify(availableDatacenters));
       showServerInfo();
@@ -615,13 +619,13 @@
     return hostname;
   };
 
-  const promptPath = () => {
-    if (currentDirectory === '/home/secadmin') return '~';
-    if (currentDirectory.startsWith('/home/secadmin/')) return `~/${currentDirectory.slice('/home/secadmin/'.length)}`;
-    return currentDirectory;
+  const promptPath = (directory = currentDirectory) => {
+    if (directory === '/home/secadmin') return '~';
+    if (directory.startsWith('/home/secadmin/')) return `~/${directory.slice('/home/secadmin/'.length)}`;
+    return directory;
   };
 
-  const prompt = () => `${colors.green}${activeSshHost ? `${activeSshHost}admin` : 'secadmin'}${colors.reset}@${colors.blue}${activeSshHost || 'localpc'}${colors.reset}:${colors.brightGreen}${promptPath()}${colors.reset}$ `;
+  const prompt = (directory = currentDirectory, hostname = activeSshHost) => `${colors.green}${hostname ? `${hostname}admin` : 'secadmin'}${colors.reset}@${colors.blue}${hostname || 'localpc'}${colors.reset}:${colors.brightGreen}${promptPath(directory)}${colors.reset}$ `;
   const writePrompt = () => terminal.write(`\r\n${prompt()}`);
   const print = (text = '') => text.split('\n').forEach((line) => terminal.writeln(line));
   const appendCodeLine = (text, kind = 'code') => {
@@ -635,6 +639,137 @@
   };
   const reportGameEvent = (command, args = [], extra = {}) => window.ptuxGame?.recordCommand({ command, args, ...extra });
   const saveServers = () => localStorage.setItem(serverStorageKey, JSON.stringify(installedServers));
+  const serializeTerminalBuffer = (session) => {
+    const buffer = session.terminal.buffer.active;
+    const lines = Array.from({ length: buffer.length }, (_, index) => buffer.getLine(index)?.translateToString(true) || '');
+    while (lines.length > 1 && !lines[lines.length - 1].trim()) lines.pop();
+    return lines.join('\n');
+  };
+  const serializeOutputLines = (element) => [...element.children].map((line) => ({ text: line.textContent, className: line.className, color: line.style.color }));
+  const saveSimulationState = () => {
+    if (restoringSimulation) return;
+    persistActiveSession();
+    const snapshot = {
+      version: 1,
+      game: window.ptuxGame?.serialize(),
+      fileSystem,
+      map: { zoom: mapState.zoom, panX: mapState.panX, panY: mapState.panY },
+      routeTarget,
+      installations: [...pendingInstallations.values()],
+      sessions: terminalSessions.map((session) => ({
+        hostname: session.hostname,
+        createdAt: session.createdAt,
+        currentDirectory: session.currentDirectory,
+        input: session.input,
+        cursorIndex: session.cursorIndex,
+        history: session.history,
+        historyIndex: session.historyIndex,
+        pendingSshHost: session.pendingSshAuth?.server?.hostname || null,
+        activeSshHost: session.activeSshHost,
+        installedPackages: session.installedPackages,
+        terminalText: serializeTerminalBuffer(session),
+      })),
+      activeSessionHostname: activeSession?.hostname || '',
+      codeLines: serializeOutputLines(codeOutput),
+      monitorLines: serializeOutputLines(monitorOutput),
+      aiOutput: aiOutput?.textContent || '',
+    };
+    try {
+      localStorage.setItem(simulationStorageKey, JSON.stringify(snapshot));
+    } catch (error) {
+      console.error('Simulationszustand konnte nicht gespeichert werden.', error);
+    }
+  };
+  const restoreOutputLines = (element, lines) => {
+    if (!Array.isArray(lines)) return;
+    element.replaceChildren();
+    lines.forEach((savedLine) => {
+      if (!savedLine || typeof savedLine.text !== 'string') return;
+      const line = document.createElement('div');
+      line.className = typeof savedLine.className === 'string' ? savedLine.className : '';
+      line.textContent = savedLine.text;
+      if (typeof savedLine.color === 'string') line.style.color = savedLine.color;
+      element.appendChild(line);
+    });
+  };
+  const restoreSimulationState = () => {
+    let snapshot;
+    try {
+      snapshot = JSON.parse(localStorage.getItem(simulationStorageKey) || 'null');
+    } catch (error) {
+      localStorage.removeItem(simulationStorageKey);
+      return false;
+    }
+    if (!snapshot || snapshot.version !== 1) return false;
+    restoringSimulation = true;
+    clearAttackTimers();
+    if (snapshot.fileSystem?.type === 'dir' && snapshot.fileSystem.entries && typeof snapshot.fileSystem.entries === 'object') {
+      Object.keys(fileSystem).forEach((key) => delete fileSystem[key]);
+      Object.assign(fileSystem, snapshot.fileSystem);
+    }
+    if (snapshot.map && Number.isFinite(snapshot.map.zoom) && Number.isFinite(snapshot.map.panX) && Number.isFinite(snapshot.map.panY)) {
+      mapState.zoom = Math.max(0, Math.min(50, snapshot.map.zoom));
+      mapState.panX = snapshot.map.panX;
+      mapState.panY = snapshot.map.panY;
+    }
+    window.ptuxGame?.restore(snapshot.game);
+    pendingInstallations.clear();
+    if (Array.isArray(snapshot.installations)) {
+      snapshot.installations.forEach((installation) => {
+        if (!installation || typeof installation.hostname !== 'string' || typeof installation.ip !== 'string' || typeof installation.os !== 'string' || !installation.datacenter || !Number.isInteger(installation.step)) return;
+        pendingInstallations.set(installation.hostname, { ...installation, step: Math.max(0, installation.step) });
+      });
+      availableDatacenters = availableDatacenters.filter((datacenter) => ![...pendingInstallations.values()].some((installation) => installation.ip === datacenter.ip));
+      localStorage.setItem(availableDatacentersStorageKey, JSON.stringify(availableDatacenters));
+    }
+    restoreOutputLines(codeOutput, snapshot.codeLines);
+    restoreOutputLines(monitorOutput, snapshot.monitorLines);
+    if (Array.isArray(snapshot.routeTarget) && snapshot.routeTarget.length === 3) drawRoute(snapshot.routeTarget);
+    if (Array.isArray(snapshot.sessions) && snapshot.sessions.length) {
+      snapshot.sessions.slice(0, 4).forEach((savedSession) => {
+        if (!savedSession || typeof savedSession.hostname !== 'string') return;
+        const session = savedSession.hostname ? createTerminalSession(savedSession.hostname) : localSession;
+        session.createdAt = Number.isFinite(savedSession.createdAt) ? savedSession.createdAt : Date.now();
+        session.currentDirectory = typeof savedSession.currentDirectory === 'string' ? savedSession.currentDirectory : '/home/secadmin';
+        session.input = typeof savedSession.input === 'string' ? savedSession.input : '';
+        session.cursorIndex = Number.isInteger(savedSession.cursorIndex) ? Math.max(0, Math.min(session.input.length, savedSession.cursorIndex)) : session.input.length;
+        session.history = Array.isArray(savedSession.history) ? savedSession.history.filter((item) => typeof item === 'string').slice(-20) : [];
+        session.historyIndex = Number.isInteger(savedSession.historyIndex) ? Math.max(0, Math.min(session.history.length, savedSession.historyIndex)) : session.history.length;
+        session.activeSshHost = typeof savedSession.activeSshHost === 'string' ? savedSession.activeSshHost : session.hostname;
+        session.installedPackages = savedSession.installedPackages && typeof savedSession.installedPackages === 'object' ? savedSession.installedPackages : { ...basePackages };
+        const pendingServer = installedServers.find((server) => server.hostname === savedSession.pendingSshHost);
+        const credentials = infoSafeEntries.find((entry) => entry.hostname === savedSession.pendingSshHost);
+        session.pendingSshAuth = pendingServer && credentials ? { server: pendingServer, credentials } : null;
+        session.pendingSshPassword = '';
+        const terminalText = typeof savedSession.terminalText === 'string' ? savedSession.terminalText.replace(/\n+$/, '') : '';
+        if (terminalText.trim()) {
+          const coloredPrompt = prompt(session.currentDirectory, session.activeSshHost);
+          const plainPrompt = coloredPrompt.replace(/\x1b\[[0-9;]*m/g, '').trimEnd();
+          const visibleTerminalText = terminalText.trimEnd();
+          const restoredTerminalText = visibleTerminalText.endsWith(plainPrompt)
+            ? `${visibleTerminalText.slice(0, -plainPrompt.length)}${coloredPrompt}`
+            : terminalText;
+          session.terminal.write(restoredTerminalText.replace(/\n/g, '\r\n'));
+        }
+      });
+      const savedActiveSession = terminalSessions.find((session) => session.hostname === snapshot.activeSessionHostname) || localSession;
+      activeSession = null;
+      activateSession(savedActiveSession);
+    }
+    updateMapTransform();
+    updateSecurityIndicators(installedServers.find((server) => server.hostname === activeSshHost)
+      || installedServers.find((server) => server.firewallActive || server.fail2banActive));
+    renderBlockedLogs();
+    if (typeof snapshot.aiOutput === 'string' && aiOutput) aiOutput.textContent = snapshot.aiOutput;
+    restoringSimulation = false;
+    resumePendingInstallations();
+    resumePendingAttackSimulations();
+    return true;
+  };
+  const persistAfterTerminalWrites = (session = activeSession) => {
+    if (!session) { saveSimulationState(); return; }
+    session.terminal.write('', () => saveSimulationState());
+  };
   const saveHistory = () => {
     if (!activeSshHost) {
       localStorage.setItem(historyStorageKey, JSON.stringify(history));
@@ -803,6 +938,79 @@
     return datacenter;
   };
   const generateBootstrapPassword = () => Array.from(crypto.getRandomValues(new Uint32Array(3)), (value) => window.PTUX_PASSWORD_WORDS[value % window.PTUX_PASSWORD_WORDS.length]).join('-');
+  const createInstallerScript = ({ hostname, ip, os, datacenter }) => [
+    '#!/usr/bin/env ptuXOS-installer',
+    `echo "PXE boot: ${hostname}"`,
+    `set server_ip=${ip}`,
+    `set datacenter=${datacenter.name}`,
+    `set hostname=${hostname}`,
+    'pxe-client --discover --interface eth0',
+    'pxe-client --load kernel.ptux',
+    'pxe-client --load initrd.ptux',
+    `ptux-install --target /dev/sda --os ${os}`,
+    'ptux-install --partition-layout guided',
+    'ptux-install --network dhcp --offline',
+    `ptux-install --hostname ${hostname}`,
+    'ptux-secret create --name bootstrap-password --random --length 3-words',
+    `ptux-user add --username ${hostname}admin --groups sudo --home /home/${hostname}admin`,
+    `ptux-user set-password --username ${hostname}admin --password-from-secret bootstrap-password`,
+    'ptux-install --enable ssh',
+    'ptux-install --write-bootloader',
+    'system-image --verify ptuXOS-base.img',
+    'system-image --extract ptuXOS-base.img /target',
+    'configure-locale de_DE.UTF-8',
+    'configure-timezone Europe/Berlin',
+    'configure-network --apply',
+    'service ssh enable',
+    'service network restart',
+    'sync /target/boot',
+    'umount /target',
+    'reboot --target-server',
+  ];
+  const completeInstallation = async (installation) => {
+    const { hostname, ip, os, datacenter } = installation;
+    const credentials = { username: `${hostname}admin`, password: generateBootstrapPassword() };
+    const server = { os, ip, hostname, datacenter, createdAt: Date.now() };
+    infoSafeEntries.push({ hostname, ...credentials });
+    try {
+      await saveInfoSafe();
+    } catch (error) {
+      infoSafeEntries.pop();
+      pendingInstallations.delete(hostname);
+      print(`${colors.orange}Info-Safe konnte nicht verschlüsselt gespeichert werden. Installation nicht übernommen.${colors.reset}`);
+      persistAfterTerminalWrites();
+      return;
+    }
+    pendingInstallations.delete(hostname);
+    renderInfoSafe();
+    installedServers.push(server);
+    assignServerAttackColors();
+    saveServers();
+    showServerInfo();
+    updateMapTransform();
+    appendCodeLine(`[installserver] Installation abgeschlossen: ${hostname}`, 'output');
+    reportGameEvent('installserver', [hostname, ip, os], { server });
+    persistAfterTerminalWrites();
+  };
+  const resumeInstallation = (installation) => {
+    const { hostname } = installation;
+    if (installationTimers.has(hostname)) return;
+    const script = createInstallerScript(installation);
+    const timer = window.setInterval(() => {
+      if (installation.step < script.length) {
+        appendCodeLine(script[installation.step]);
+        installation.step += 1;
+        saveSimulationState();
+      }
+      if (installation.step >= script.length) {
+        window.clearInterval(timer);
+        installationTimers.delete(hostname);
+        completeInstallation(installation);
+      }
+    }, 200);
+    installationTimers.set(hostname, timer);
+  };
+  const resumePendingInstallations = () => pendingInstallations.forEach((installation) => resumeInstallation(installation));
   const installServer = async (args) => {
     if (args.length !== 3) {
       printInstallServerOptions();
@@ -811,69 +1019,12 @@
     const [hostname, ip, os] = args;
     const datacenter = await validateInstallServer(args);
     if (!datacenter) return;
-    const credentials = { username: `${hostname}admin`, password: generateBootstrapPassword() };
     availableDatacenters = availableDatacenters.filter((entry) => !(entry.name === datacenter.name && entry.ip === datacenter.ip));
     localStorage.setItem(availableDatacentersStorageKey, JSON.stringify(availableDatacenters));
-    const script = [
-      '#!/usr/bin/env ptuXOS-installer',
-      `echo "PXE boot: ${hostname}"`,
-      `set server_ip=${ip}`,
-      `set datacenter=${datacenter.name}`,
-      `set hostname=${hostname}`,
-      'pxe-client --discover --interface eth0',
-      'pxe-client --load kernel.ptux',
-      'pxe-client --load initrd.ptux',
-      `ptux-install --target /dev/sda --os ${os}`,
-      'ptux-install --partition-layout guided',
-      'ptux-install --network dhcp --offline',
-      `ptux-install --hostname ${hostname}`,
-      'ptux-secret create --name bootstrap-password --random --length 3-words',
-      `ptux-user add --username ${credentials.username} --groups sudo --home /home/${credentials.username}`,
-      `ptux-user set-password --username ${credentials.username} --password-from-secret bootstrap-password`,
-      'ptux-install --enable ssh',
-      'ptux-install --write-bootloader',
-      'system-image --verify ptuXOS-base.img',
-      'system-image --extract ptuXOS-base.img /target',
-      'configure-locale de_DE.UTF-8',
-      'configure-timezone Europe/Berlin',
-      'configure-network --apply',
-      'service ssh enable',
-      'service network restart',
-      'sync /target/boot',
-      'umount /target',
-      'reboot --target-server',
-    ];
-    let step = 0;
+    const installation = { hostname, ip, os, datacenter, step: 0 };
+    pendingInstallations.set(hostname, installation);
     appendCodeLine(`[installserver] PXE-Installation gestartet: ${hostname}`, 'output');
-    const completeInstallation = async () => {
-      const server = { os, ip, hostname, datacenter, createdAt: Date.now() };
-      const safeEntry = { hostname, ...credentials };
-      infoSafeEntries.push(safeEntry);
-      try {
-        await saveInfoSafe();
-      } catch (error) {
-        infoSafeEntries.pop();
-        print(`${colors.orange}Info-Safe konnte nicht verschlüsselt gespeichert werden. Installation nicht übernommen.${colors.reset}`);
-        return;
-      }
-      renderInfoSafe();
-      installedServers.push(server);
-      assignServerAttackColors();
-      saveServers();
-      showServerInfo();
-      updateMapTransform();
-      appendCodeLine(`[installserver] Installation abgeschlossen: ${hostname}`, 'output');
-      reportGameEvent('installserver', args, { server });
-    };
-    const installationTimer = window.setInterval(() => {
-      appendCodeLine(script[step++]);
-      if (step === script.length) {
-        window.clearInterval(installationTimer);
-        installationTimers.delete(installationTimer);
-        completeInstallation();
-      }
-    }, 200);
-    installationTimers.add(installationTimers);
+    resumeInstallation(installation);
     print(`${colors.green}Remote-Installation wurde gestartet${colors.reset}`);
   };
   const addSuperuser = (args) => {
@@ -998,6 +1149,7 @@
   const resetSimulation = () => {
     installationTimers.forEach((timer) => window.clearInterval(timer));
     installationTimers.clear();
+    pendingInstallations.clear();
     clearAttackTimers();
     localStorage.clear();
     infoSafeEntries.length = 0;
@@ -1027,7 +1179,6 @@
     activeSshHost = '';
     clearRemoteTerminals();
     window.ptuxGame?.reset();
-    print(`${colors.green}Simulation zurückgesetzt. localStorage wurde geleert.${colors.reset}`);
   };
 
   function resolvePath(path = '~') {
@@ -1376,6 +1527,7 @@
       input = '';
       cursorIndex = 0;
       writePrompt();
+      persistAfterTerminalWrites();
       return;
     }
     if (commandLine) {
@@ -1385,7 +1537,7 @@
       saveHistory();
       historyIndex = history.length;
       const execution = execute(commandLine);
-      if (execution === 'ssh-password-prompt') { input = ''; cursorIndex = 0; return; }
+      if (execution === 'ssh-password-prompt') { input = ''; cursorIndex = 0; persistAfterTerminalWrites(); return; }
       if (execution?.then) {
         const commandSession = activeSession;
         const commandPrompt = prompt();
@@ -1393,7 +1545,10 @@
           commandSession.input = '';
           commandSession.cursorIndex = 0;
           if (activeSession === commandSession) { input = ''; cursorIndex = 0; }
-          const restorePrompt = () => commandSession.terminal.write(`\r\n${commandPrompt}`, () => commandSession.terminal.scrollToBottom());
+          const restorePrompt = () => commandSession.terminal.write(`\r\n${commandPrompt}`, () => {
+            commandSession.terminal.scrollToBottom();
+            persistAfterTerminalWrites(commandSession);
+          });
           if (activeSession === commandSession) {
             window.requestAnimationFrame(() => {
               commandSession.fitAddon.fit();
@@ -1408,6 +1563,7 @@
     input = '';
     cursorIndex = 0;
     writePrompt();
+    persistAfterTerminalWrites();
   }
 
   function autocomplete() {
@@ -1530,8 +1686,8 @@
   fitTerminal();
   initializeAppData();
   loadHistory();
-  loadInfoSafe().then(() => {
+  Promise.all([mapDataReady, loadInfoSafe()]).then(() => {
     window.ptuxGame?.start();
-    boot();
+    if (!restoreSimulationState()) boot();
   });
 })();
