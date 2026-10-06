@@ -497,7 +497,19 @@
   let activeSshHost = '';
   const revealedPasswords = new Set();
 
-  const fitTerminal = () => window.requestAnimationFrame(() => fitAddon?.fit());
+  const fitTerminalSession = (session) => {
+    if (!session || session.container.hidden) return;
+    const height = session.container.clientHeight;
+    if (!height) return;
+    const previousHeight = session.container.style.height;
+    session.container.style.height = `${height}px`;
+    try {
+      session.fitAddon.fit();
+    } finally {
+      session.container.style.height = previousHeight;
+    }
+  };
+  const fitTerminal = () => window.requestAnimationFrame(() => fitTerminalSession(activeSession));
   const persistActiveSession = () => {
     if (!activeSession) return;
     Object.assign(activeSession, { currentDirectory, input, cursorIndex, history, historyIndex, pendingSshAuth, pendingSshPassword, activeSshHost });
@@ -641,9 +653,58 @@
   const saveServers = () => localStorage.setItem(serverStorageKey, JSON.stringify(installedServers));
   const serializeTerminalBuffer = (session) => {
     const buffer = session.terminal.buffer.active;
-    const lines = Array.from({ length: buffer.length }, (_, index) => buffer.getLine(index)?.translateToString(true) || '');
-    while (lines.length > 1 && !lines[lines.length - 1].trim()) lines.pop();
-    return lines.join('\n');
+    const colorCodes = (mode, color, foreground) => {
+      const prefix = foreground ? 38 : 48;
+      if (mode === 16777216) {
+        if (color < 8) return [String((foreground ? 30 : 40) + color)];
+        if (color < 16) return [String((foreground ? 90 : 100) + color - 8)];
+        return [`${prefix};5;${color}`];
+      }
+      if (mode === 33554432) return [`${prefix};5;${color}`];
+      if (mode === 50331648) return [`${prefix};2;${(color >> 16) & 255};${(color >> 8) & 255};${color & 255}`];
+      return [];
+    };
+    const cellStyle = (cell) => {
+      const codes = [];
+      if (cell.isBold()) codes.push('1');
+      if (cell.isDim()) codes.push('2');
+      if (cell.isItalic()) codes.push('3');
+      if (cell.isUnderline()) codes.push('4');
+      if (cell.isBlink()) codes.push('5');
+      if (cell.isInverse()) codes.push('7');
+      if (cell.isInvisible()) codes.push('8');
+      if (cell.isStrikethrough()) codes.push('9');
+      codes.push(...colorCodes(cell.getFgColorMode(), cell.getFgColor(), true));
+      codes.push(...colorCodes(cell.getBgColorMode(), cell.getBgColor(), false));
+      return codes.join(';');
+    };
+    const serializeLine = (line) => {
+      const cells = [];
+      for (let index = 0; index < line.length; index += 1) {
+        const cell = line.getCell(index);
+        const width = cell.getWidth();
+        if (width === 0) continue;
+        cells.push({ cell, chars: cell.getChars() || ' '.repeat(width) });
+      }
+      while (cells.length && !cells[cells.length - 1].chars.trim()) cells.pop();
+      let result = '';
+      let activeStyle = null;
+      cells.forEach(({ cell, chars }) => {
+        const style = cellStyle(cell);
+        if (style !== activeStyle) {
+          if (activeStyle !== null) result += '\x1b[0m';
+          if (style) result += `\x1b[${style}m`;
+          activeStyle = style;
+        }
+        result += chars;
+      });
+      if (activeStyle) result += '\x1b[0m';
+      return result;
+    };
+    const lastLine = buffer.length - 1;
+    let lineCount = buffer.length;
+    while (lineCount > 1 && !(buffer.getLine(lineCount - 1)?.translateToString(true) || '').trim()) lineCount -= 1;
+    return Array.from({ length: Math.min(lineCount, lastLine + 1) }, (_, index) => serializeLine(buffer.getLine(index))).join('\n');
   };
   const serializeOutputLines = (element) => [...element.children].map((line) => ({ text: line.textContent, className: line.className, color: line.style.color }));
   const saveSimulationState = () => {
@@ -745,9 +806,9 @@
         if (terminalText.trim()) {
           const coloredPrompt = prompt(session.currentDirectory, session.activeSshHost);
           const plainPrompt = coloredPrompt.replace(/\x1b\[[0-9;]*m/g, '').trimEnd();
-          const visibleTerminalText = terminalText.trimEnd();
-          const restoredTerminalText = visibleTerminalText.endsWith(plainPrompt)
-            ? `${visibleTerminalText.slice(0, -plainPrompt.length)}${coloredPrompt}`
+          const plainTerminalText = terminalText.replace(/\x1b\[[0-9;]*m/g, '').trimEnd();
+          const restoredTerminalText = !/\x1b\[[0-9;]*m/.test(terminalText) && plainTerminalText.endsWith(plainPrompt)
+            ? `${plainTerminalText.slice(0, -plainPrompt.length)}${coloredPrompt}`
             : terminalText;
           session.terminal.write(restoredTerminalText.replace(/\n/g, '\r\n'));
         }
@@ -755,6 +816,15 @@
       const savedActiveSession = terminalSessions.find((session) => session.hostname === snapshot.activeSessionHostname) || localSession;
       activeSession = null;
       activateSession(savedActiveSession);
+      terminalSessions.forEach((session) => session.terminal.write('', () => {
+        window.requestAnimationFrame(() => {
+          if (session === activeSession) fitTerminalSession(session);
+          window.requestAnimationFrame(() => {
+            if (session === activeSession) fitTerminalSession(session);
+            session.terminal.scrollToBottom();
+          });
+        });
+      }));
     }
     updateMapTransform();
     updateSecurityIndicators(installedServers.find((server) => server.hostname === activeSshHost)
@@ -1551,7 +1621,7 @@
           });
           if (activeSession === commandSession) {
             window.requestAnimationFrame(() => {
-              commandSession.fitAddon.fit();
+              fitTerminalSession(commandSession);
               commandSession.terminal.scrollToBottom();
               restorePrompt();
             });
