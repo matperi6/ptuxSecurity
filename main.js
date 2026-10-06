@@ -8,18 +8,27 @@
   const serverInfo = document.querySelector('#server-info');
   const codeOutput = document.querySelector('#code-output');
   const aiOutput = document.querySelector('#ai-output');
+  const phaseTimerOutput = document.querySelector('#phase-timer');
   const monitorOutput = document.querySelector('#monitor-output');
   const blockedLogs = document.querySelector('#blocked-logs');
   const firewallStatus = document.querySelector('#firewall-status');
   const fail2banStatus = document.querySelector('#fail2ban-status');
   const mapState = { zoom: 0, panX: 0, panY: 0, dragging: false, lastX: 0, lastY: 0 };
   const serverStorageKey = 'ptuxSecurity.servers';
+  const localPcStorageKey = 'ptuxSecurity.localpc';
   const simulationStorageKey = 'ptuxSecurity.simulation';
   const historyStorageKey = 'ptuxSecurity.history';
   const infoSafeStorageKey = 'ptuxSecurity.infoSafe';
   const osImagesStorageKey = 'ptuxSecurity.osImages';
   const availableDatacentersStorageKey = 'ptuxSecurity.availableDatacenters';
+  const phaseTimerStorageKey = 'ptuxSecurity.phaseTimer';
+  const highscoreStorageKey = 'ptuxSecurity.highscores';
+  const phaseCountdownMs = 10_000;
+  const defaultPhaseDurationMs = 3 * 60_000;
+  let activePhaseRun = null;
+  let phaseTimerInterval = null;
   const availableOsImages = ['ptuXOS'];
+  const defaultLocalPcNetwork = { ip: '192.168.1.10', gateway: '192.168.1.1', mask: '255.255.255.0', mac: '02:00:00:00:00:10' };
   const deutsche_rechenzentren = [
     { name: 'Frankfurt', lon: 8.68213, lat: 50.11092 },
     { name: 'Berlin', lon: 13.41053, lat: 52.52437 },
@@ -41,6 +50,7 @@
   ];
   let cityData = [];
   let installedServers = [];
+  let localPcNetwork = { ...defaultLocalPcNetwork };
   let availableDatacenters = [];
   const installationTimers = new Map();
   const pendingInstallations = new Map();
@@ -384,6 +394,37 @@
     const octets = value.split('.');
     return octets.length === 4 && octets.every((octet) => /^(0|[1-9]\d{0,2})$/.test(octet) && Number(octet) <= 255);
   };
+  const isValidMacAddress = (value) => typeof value === 'string' && /^(?:[\da-f]{2}:){5}[\da-f]{2}$/i.test(value);
+  const generateMacAddress = (usedAddresses = []) => {
+    let address;
+    do {
+      const octets = Array.from(crypto.getRandomValues(new Uint8Array(6)), (value) => value.toString(16).padStart(2, '0'));
+      octets[0] = ((parseInt(octets[0], 16) & 0xfe) | 0x02).toString(16).padStart(2, '0');
+      address = octets.join(':');
+    } while (usedAddresses.some((usedAddress) => usedAddress.toLowerCase() === address));
+    return address;
+  };
+  const gatewayForIp = (ip) => `${ip.split('.').slice(0, 3).join('.')}.1`;
+  const loadLocalPcNetwork = () => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(localPcStorageKey) || 'null');
+      localPcNetwork = {
+        ip: isValidIp(stored?.ip) ? stored.ip : defaultLocalPcNetwork.ip,
+        gateway: isValidIp(stored?.gateway) ? stored.gateway : defaultLocalPcNetwork.gateway,
+        mask: isValidIp(stored?.mask) ? stored.mask : defaultLocalPcNetwork.mask,
+        mac: isValidMacAddress(stored?.mac) ? stored.mac.toLowerCase() : defaultLocalPcNetwork.mac,
+      };
+    } catch (error) {
+      localPcNetwork = { ...defaultLocalPcNetwork };
+    }
+    localStorage.setItem(localPcStorageKey, JSON.stringify(localPcNetwork));
+  };
+  const normalizeServerNetwork = (server) => ({
+    ...server,
+    gateway: isValidIp(server.gateway) ? server.gateway : gatewayForIp(server.ip),
+    mask: isValidIp(server.mask) ? server.mask : '255.255.255.0',
+    mac: isValidMacAddress(server.mac) ? server.mac.toLowerCase() : generateMacAddress(installedServers.map((entry) => entry.mac).filter(Boolean)),
+  });
   const loadAvailableDatacenters = () => {
     try {
       const storedServers = JSON.parse(localStorage.getItem(serverStorageKey) || '[]');
@@ -398,6 +439,7 @@
   };
   const initializeAppData = () => {
     localStorage.setItem(osImagesStorageKey, JSON.stringify(availableOsImages));
+    loadLocalPcNetwork();
     loadAvailableDatacenters();
   };
   const svgPointFromEvent = (event) => { const bounds = mapSvg.getBoundingClientRect(); return [(event.clientX - bounds.left) * (1000 / bounds.width), (event.clientY - bounds.top) * (560 / bounds.height)]; };
@@ -479,8 +521,8 @@
     sudo: '1.9.15p5-3ubuntu5.1',
   };
   const adminToolsPackages = ['admintools', 'fail2ban', 'nmap', 'rkhunter', 'ufw'];
-  const commandNames = ['addsuperuser', 'analyzemonitor', 'blockip', 'cat', 'cd', 'clear', 'configserver', 'date', 'deployservice', 'echo', 'exit', 'help', 'history', 'hostname', 'incidentreport', 'installserver', 'integritycheck', 'lockserver', 'ls', 'man', 'mkdir', 'ptuxfetch', 'pwd', 'reset', 'restoreservice', 'rm', 'secureserver', 'ssh', 'startmonitor', 'sudo', 'touch', 'tracert', 'uname', 'whoami', 'which'];
-  const remoteCommands = new Set(['help', 'ls', 'cd', 'pwd', 'cat', 'touch', 'mkdir', 'rm', 'echo', 'date', 'whoami', 'uname', 'ptuxfetch', 'history', 'man', 'ssh', 'sudo', 'secureserver']);
+  const commandNames = ['addsuperuser', 'cat', 'cd', 'clear', 'date', 'echo', 'exit', 'help', 'highscore', 'history', 'hostname', 'installserver', 'ls', 'man', 'mkdir', 'ptuxfetch', 'pwd', 'reset', 'rm', 'secureserver', 'ssh', 'start', 'stop', 'sudo', 'touch', 'tracert', 'uname', 'whoami', 'which'];
+  const remoteCommands = new Set(['help', 'highscore', 'stop', 'ls', 'cd', 'pwd', 'cat', 'touch', 'mkdir', 'rm', 'echo', 'date', 'whoami', 'uname', 'ptuxfetch', 'history', 'man', 'ssh', 'sudo', 'secureserver']);
   const initialFileSystem = JSON.stringify(fileSystem);
   let currentDirectory = '/home/secadmin';
   let input = '';
@@ -649,7 +691,10 @@
     const maxLines = Math.max(1, Math.floor(codeOutput.clientHeight / lineHeight));
     while (codeOutput.children.length > maxLines) codeOutput.firstElementChild.remove();
   };
-  const reportGameEvent = (command, args = [], extra = {}) => window.ptuxGame?.recordCommand({ command, args, ...extra });
+  const reportGameEvent = (command, args = [], extra = {}) => {
+    window.ptuxGame?.recordCommand({ command, args, ...extra });
+    window.ptuxGame?.syncServers(installedServers);
+  };
   const saveServers = () => localStorage.setItem(serverStorageKey, JSON.stringify(installedServers));
   const serializeTerminalBuffer = (session) => {
     const buffer = session.terminal.buffer.active;
@@ -707,6 +752,220 @@
     return Array.from({ length: Math.min(lineCount, lastLine + 1) }, (_, index) => serializeLine(buffer.getLine(index))).join('\n');
   };
   const serializeOutputLines = (element) => [...element.children].map((line) => ({ text: line.textContent, className: line.className, color: line.style.color }));
+  const findPhase = (phaseId) => (window.PTUX_GAME_DATA || []).find((phase) => phase.id.toLocaleLowerCase() === String(phaseId).toLocaleLowerCase());
+  const getPhaseDuration = (phase) => Number.isFinite(phase?.durationSeconds) && phase.durationSeconds > 0
+    ? phase.durationSeconds * 1000
+    : defaultPhaseDurationMs;
+  const formatTimerValue = (milliseconds, roundUp = true) => {
+    const totalSeconds = Math.max(0, roundUp ? Math.ceil(milliseconds / 1000) : Math.floor(milliseconds / 1000));
+    const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+    const seconds = (totalSeconds % 60).toString().padStart(2, '0');
+    return `${minutes}:${seconds}`;
+  };
+  const renderPhaseTimer = (now = Date.now()) => {
+    if (!phaseTimerOutput) return;
+    if (!activePhaseRun) {
+      phaseTimerOutput.textContent = '--:--';
+      phaseTimerOutput.dataset.state = 'idle';
+      return;
+    }
+    if (activePhaseRun.completed) {
+      phaseTimerOutput.textContent = formatTimerValue(activePhaseRun.elapsedMs, false);
+      phaseTimerOutput.dataset.state = 'complete';
+      return;
+    }
+    if (activePhaseRun.startedAt === null) {
+      phaseTimerOutput.textContent = formatTimerValue(activePhaseRun.countdownEndsAt - now);
+      phaseTimerOutput.dataset.state = 'idle';
+      return;
+    }
+    const elapsedMs = Math.max(0, now - activePhaseRun.startedAt);
+    const remainingMs = activePhaseRun.durationMs - elapsedMs;
+    if (remainingMs > 0) {
+      phaseTimerOutput.textContent = formatTimerValue(remainingMs);
+      phaseTimerOutput.dataset.state = remainingMs <= 60_000 ? 'last-minute' : 'running';
+      return;
+    }
+    phaseTimerOutput.textContent = elapsedMs === activePhaseRun.durationMs
+      ? '00:00'
+      : `+${formatTimerValue(elapsedMs - activePhaseRun.durationMs)}`;
+    phaseTimerOutput.dataset.state = 'expired';
+  };
+  const persistPhaseRun = () => {
+    if (!activePhaseRun) {
+      localStorage.removeItem(phaseTimerStorageKey);
+      return;
+    }
+    try {
+      localStorage.setItem(phaseTimerStorageKey, JSON.stringify(activePhaseRun));
+    } catch (error) {
+      console.error('Phasentimer konnte nicht gespeichert werden.', error);
+    }
+  };
+  const readHighscores = () => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(highscoreStorageKey) || '{}');
+      return stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {};
+    } catch (error) {
+      return {};
+    }
+  };
+  const getPhaseHighscores = (phaseId) => {
+    const entries = readHighscores()[phaseId];
+    if (!Array.isArray(entries)) return [];
+    return entries.filter((entry) => entry && Number.isFinite(entry.durationMs) && entry.durationMs >= 0 && Number.isFinite(entry.completedAt))
+      .sort((left, right) => left.durationMs - right.durationMs || left.completedAt - right.completedAt)
+      .slice(0, 10);
+  };
+  const savePhaseHighscore = (phaseId, durationMs, completedAt) => {
+    const scores = readHighscores();
+    const entries = Array.isArray(scores[phaseId]) ? scores[phaseId] : [];
+    entries.push({ durationMs, completedAt });
+    scores[phaseId] = entries
+      .filter((entry) => entry && Number.isFinite(entry.durationMs) && Number.isFinite(entry.completedAt))
+      .sort((left, right) => left.durationMs - right.durationMs || left.completedAt - right.completedAt)
+      .slice(0, 10);
+    try {
+      localStorage.setItem(highscoreStorageKey, JSON.stringify(scores));
+    } catch (error) {
+      console.error('Bestenliste konnte nicht gespeichert werden.', error);
+    }
+  };
+  const clearPhaseTimer = () => {
+    if (phaseTimerInterval !== null) window.clearInterval(phaseTimerInterval);
+    phaseTimerInterval = null;
+    activePhaseRun = null;
+    persistPhaseRun();
+    renderPhaseTimer();
+  };
+  const tickPhaseTimer = () => {
+    if (!activePhaseRun || activePhaseRun.completed) return;
+    const now = Date.now();
+    if (activePhaseRun.startedAt === null && now >= activePhaseRun.countdownEndsAt) {
+      activePhaseRun.startedAt = activePhaseRun.countdownEndsAt;
+      if (!window.ptuxGame?.startPhase(activePhaseRun.phaseId)) {
+        clearPhaseTimer();
+        return;
+      }
+      persistPhaseRun();
+      saveSimulationState();
+    }
+    renderPhaseTimer(now);
+  };
+  const startPhaseTimerTicker = () => {
+    if (phaseTimerInterval !== null) window.clearInterval(phaseTimerInterval);
+    tickPhaseTimer();
+    if (activePhaseRun && !activePhaseRun.completed) phaseTimerInterval = window.setInterval(tickPhaseTimer, 200);
+  };
+  const restorePhaseTimer = () => {
+    let saved;
+    try {
+      saved = JSON.parse(localStorage.getItem(phaseTimerStorageKey) || 'null');
+    } catch (error) {
+      localStorage.removeItem(phaseTimerStorageKey);
+      renderPhaseTimer();
+      return false;
+    }
+    const phase = saved && findPhase(saved.phaseId);
+    const valid = phase && Number.isFinite(saved.durationMs) && saved.durationMs > 0
+      && (saved.completed
+        ? Number.isFinite(saved.elapsedMs)
+        : saved.startedAt === null ? Number.isFinite(saved.countdownEndsAt) : Number.isFinite(saved.startedAt));
+    if (!valid) {
+      activePhaseRun = null;
+      renderPhaseTimer();
+      return false;
+    }
+    activePhaseRun = { ...saved, phaseId: phase.id };
+    renderPhaseTimer();
+    if (!activePhaseRun.completed) startPhaseTimerTicker();
+    return true;
+  };
+  const startPhaseCountdown = (phase) => {
+    activePhaseRun = {
+      phaseId: phase.id,
+      countdownEndsAt: Date.now() + phaseCountdownMs,
+      startedAt: null,
+      durationMs: getPhaseDuration(phase),
+      completed: false,
+    };
+    persistPhaseRun();
+    renderPhaseTimer();
+    startPhaseTimerTicker();
+  };
+  const finishPhaseRun = (phaseId) => {
+    if (!activePhaseRun || activePhaseRun.phaseId !== phaseId || activePhaseRun.startedAt === null || activePhaseRun.completed) return;
+    const completedAt = Date.now();
+    const elapsedMs = Math.max(0, completedAt - activePhaseRun.startedAt);
+    activePhaseRun = { ...activePhaseRun, completed: true, elapsedMs, completedAt };
+    savePhaseHighscore(phaseId, elapsedMs, completedAt);
+    persistPhaseRun();
+    if (phaseTimerInterval !== null) window.clearInterval(phaseTimerInterval);
+    phaseTimerInterval = null;
+    renderPhaseTimer(completedAt);
+  };
+  const showHighscores = (args) => {
+    if (args.length !== 1) {
+      print(`${colors.orange}highscore: usage: highscore <phase>${colors.reset}`);
+      print(`Verfügbare Phasen: ${(window.PTUX_GAME_DATA || []).map((phase) => phase.id).join(', ')}`);
+      return;
+    }
+    const phase = findPhase(args[0]);
+    if (!phase) {
+      print(`${colors.orange}highscore: unbekannte Phase '${args[0]}'.${colors.reset}`);
+      print(`Verfügbare Phasen: ${(window.PTUX_GAME_DATA || []).map((entry) => entry.id).join(', ')}`);
+      return;
+    }
+    const entries = getPhaseHighscores(phase.id);
+    print(`Beste Zeiten für Phase ${phase.id}:`);
+    if (!entries.length) { print('Noch keine Ergebnisse gespeichert.'); return; }
+    entries.forEach((entry, index) => {
+      print(`  ${String(index + 1).padStart(2, ' ')}. ${formatTimerValue(entry.durationMs, false)} (${new Date(entry.completedAt).toLocaleDateString('de-DE')})`);
+    });
+  };
+  const startPhaseCommand = (args) => {
+    if (args.length !== 1) {
+      print(`${colors.orange}start: usage: start <phase>${colors.reset}`);
+      print(`Verfügbare Phasen: ${(window.PTUX_GAME_DATA || []).map((phase) => phase.id).join(', ')}`);
+      return;
+    }
+    const phase = findPhase(args[0]);
+    if (!phase) {
+      print(`${colors.orange}start: unbekannte Phase '${args[0]}'.${colors.reset}`);
+      print(`Verfügbare Phasen: ${(window.PTUX_GAME_DATA || []).map((entry) => entry.id).join(', ')}`);
+      return;
+    }
+    resetSimulation();
+    startPhaseCountdown(phase);
+    print(`Phase ${phase.id} startet in 10 Sekunden.`);
+  };
+  const stopPhaseCommand = (args) => {
+    if (args.length !== 1) {
+      print(`${colors.orange}stop: usage: stop <phase>${colors.reset}`);
+      print(`Verfügbare Phasen: ${(window.PTUX_GAME_DATA || []).map((phase) => phase.id).join(', ')}`);
+      return;
+    }
+    const phase = findPhase(args[0]);
+    if (!phase) {
+      print(`${colors.orange}stop: unbekannte Phase '${args[0]}'.${colors.reset}`);
+      print(`Verfügbare Phasen: ${(window.PTUX_GAME_DATA || []).map((entry) => entry.id).join(', ')}`);
+      return;
+    }
+    const gameState = window.ptuxGame?.serialize();
+    const gamePhase = Number.isInteger(gameState?.phaseIndex) ? window.PTUX_GAME_DATA[gameState.phaseIndex] : null;
+    const isPreparingPhase = activePhaseRun?.phaseId === phase.id && activePhaseRun.startedAt === null;
+    const currentPhase = isPreparingPhase ? phase : gamePhase;
+    if (!currentPhase || currentPhase.id !== phase.id || (activePhaseRun && activePhaseRun.phaseId !== phase.id)) {
+      print(`${colors.orange}stop: Phase ${phase.id} ist nicht aktiv.${colors.reset}`);
+      return;
+    }
+    if (isPreparingPhase) window.ptuxGame?.startPhase(phase.id);
+    if (!window.ptuxGame?.stopPhase(phase.id)) return;
+    clearPhaseTimer();
+    saveSimulationState();
+    print(`Timer für Phase ${phase.id} gestoppt. Du kannst ohne Zeitdruck weiterüben.`);
+  };
+  window.ptuxGame?.setPhaseCompletionHandler(finishPhaseRun);
   const saveSimulationState = () => {
     if (restoringSimulation) return;
     persistActiveSession();
@@ -733,7 +992,6 @@
       activeSessionHostname: activeSession?.hostname || '',
       codeLines: serializeOutputLines(codeOutput),
       monitorLines: serializeOutputLines(monitorOutput),
-      aiOutput: aiOutput?.textContent || '',
     };
     try {
       localStorage.setItem(simulationStorageKey, JSON.stringify(snapshot));
@@ -806,11 +1064,17 @@
         if (terminalText.trim()) {
           const coloredPrompt = prompt(session.currentDirectory, session.activeSshHost);
           const plainPrompt = coloredPrompt.replace(/\x1b\[[0-9;]*m/g, '').trimEnd();
+          const hasAnsiColors = /\x1b\[[0-9;]*m/.test(terminalText);
           const plainTerminalText = terminalText.replace(/\x1b\[[0-9;]*m/g, '').trimEnd();
-          const restoredTerminalText = !/\x1b\[[0-9;]*m/.test(terminalText) && plainTerminalText.endsWith(plainPrompt)
+          const promptAtEnd = plainTerminalText.endsWith(plainPrompt);
+          const restoredTerminalText = !hasAnsiColors && promptAtEnd
             ? `${plainTerminalText.slice(0, -plainPrompt.length)}${coloredPrompt}`
             : terminalText;
-          session.terminal.write(restoredTerminalText.replace(/\n/g, '\r\n'));
+          session.terminal.write(restoredTerminalText.replace(/\n/g, '\r\n'), hasAnsiColors && promptAtEnd
+            ? () => session.terminal.write(' ')
+            : undefined);
+        } else {
+          session.terminal.write(prompt(session.currentDirectory, session.activeSshHost));
         }
       });
       const savedActiveSession = terminalSessions.find((session) => session.hostname === snapshot.activeSessionHostname) || localSession;
@@ -830,7 +1094,6 @@
     updateSecurityIndicators(installedServers.find((server) => server.hostname === activeSshHost)
       || installedServers.find((server) => server.firewallActive || server.fail2banActive));
     renderBlockedLogs();
-    if (typeof snapshot.aiOutput === 'string' && aiOutput) aiOutput.textContent = snapshot.aiOutput;
     restoringSimulation = false;
     resumePendingInstallations();
     resumePendingAttackSimulations();
@@ -878,12 +1141,18 @@
     infoSafeEntries.forEach((entry) => {
       const row = document.createElement('article');
       row.className = 'safe-entry';
+      const identity = document.createElement('div');
+      identity.className = 'safe-identity';
       const hostname = document.createElement('strong');
       hostname.textContent = entry.hostname;
-      const username = document.createElement('span');
-      username.textContent = `Benutzer: ${entry.username}`;
+      const username = document.createElement('strong');
+      username.textContent = entry.username;
+      identity.append('Server ', hostname, ' | Benutzer: ', username);
       const passwordLine = document.createElement('div');
       passwordLine.className = 'safe-password-line';
+      const passwordLabel = document.createElement('span');
+      passwordLabel.className = 'safe-password-label';
+      passwordLabel.textContent = 'Passwort:';
       const password = document.createElement('span');
       password.className = 'safe-password';
       const revealed = revealedPasswords.has(entry.hostname);
@@ -899,8 +1168,8 @@
         else revealedPasswords.add(entry.hostname);
         renderInfoSafe();
       });
-      passwordLine.append(password, toggle);
-      row.append(hostname, username, passwordLine);
+      passwordLine.append(passwordLabel, password, toggle);
+      row.append(identity, passwordLine);
       safeEntriesElement.appendChild(row);
     });
   };
@@ -931,10 +1200,11 @@
     try {
       const storedServers = JSON.parse(localStorage.getItem(serverStorageKey) || '[]');
       installedServers = Array.isArray(storedServers) ? storedServers.map((server) => {
-        if (server.datacenter) return server;
+        if (!server || typeof server !== 'object') return null;
+        if (server.datacenter) return normalizeServerNetwork(server);
         const legacyCity = server.city;
         const datacenter = legacyCity ? findDatacenter(legacyCity.name) : null;
-        return datacenter ? { ...server, datacenter: { ...datacenter, ip: server.ip } } : null;
+        return datacenter ? normalizeServerNetwork({ ...server, datacenter: { ...datacenter, ip: server.ip } }) : null;
       }).filter(Boolean) : [];
       saveServers();
     } catch (error) {
@@ -1040,7 +1310,22 @@
   const completeInstallation = async (installation) => {
     const { hostname, ip, os, datacenter } = installation;
     const credentials = { username: `${hostname}admin`, password: generateBootstrapPassword() };
-    const server = { os, ip, hostname, datacenter, createdAt: Date.now() };
+    const server = {
+      os,
+      ip,
+      hostname,
+      datacenter,
+      createdAt: Date.now(),
+      gateway: gatewayForIp(ip),
+      mask: '255.255.255.0',
+      mac: generateMacAddress(installedServers.map((entry) => entry.mac).filter(Boolean)),
+      sshConnected: false,
+      packageListsUpdated: false,
+      osUpgraded: false,
+      adminToolsInstalled: false,
+      firewallActive: false,
+      fail2banActive: false,
+    };
     infoSafeEntries.push({ hostname, ...credentials });
     try {
       await saveInfoSafe();
@@ -1128,56 +1413,6 @@
     terminal.write(`${colors.blue}${username}@${hostname}'s password: ${colors.reset}`);
     return 'ssh-password-prompt';
   };
-  const runMetaCommand = (command, args) => {
-    const server = getInstalledServer(args[0]);
-    if (['configserver', 'deployservice', 'startmonitor', 'lockserver', 'restoreservice'].includes(command) && !server) {
-      print(`${colors.orange}${command}: Server '${args[0] || ''}' ist nicht installiert.${colors.reset}`);
-      return false;
-    }
-    if (command === 'configserver') {
-      if (args.length !== 1) { print(`${colors.orange}configserver: usage: configserver <hostname>${colors.reset}`); return false; }
-      ['sshd --enable', 'ufw default deny incoming', 'ufw allow ssh', 'ufw --enable'].forEach((line) => appendCodeLine(`[configserver] ${line} --target ${args[0]}`));
-      print(`${colors.green}${args[0]}: Benutzer, SSH und Firewall sind eingerichtet.${colors.reset}`);
-    } else if (command === 'deployservice') {
-      if (args.length !== 2 || !['web', 'dns'].includes(args[1])) { print(`${colors.orange}deployservice: usage: deployservice <hostname> <web|dns>${colors.reset}`); return false; }
-      appendCodeLine(`[deployservice] service ${args[1]} enable --target ${args[0]}`);
-      appendCodeLine(`[deployservice] service ${args[1]} start --target ${args[0]}`);
-      print(`${colors.green}${args[1]}-Dienst auf ${args[0]} ist aktiv.${colors.reset}`);
-    } else if (command === 'startmonitor') {
-      if (args.length !== 1) { print(`${colors.orange}startmonitor: usage: startmonitor <hostname>${colors.reset}`); return false; }
-      appendCodeLine(`[startmonitor] monitor-agent --install --target ${args[0]}`);
-      appendCodeLine(`[startmonitor] monitor-agent --start --target ${args[0]}`);
-      print(`${colors.green}Monitoring auf ${args[0]} gestartet.${colors.reset}`);
-    } else if (command === 'analyzemonitor') {
-      appendCodeLine('[analyzemonitor] monitorctl --read /var/log/auth.log');
-      appendCodeLine('[analyzemonitor] pattern=brute-force action=flag');
-      print(`${colors.orange}Verdächtige IPs: 203.0.113.42, 198.51.100.23, 192.0.2.77${colors.reset}`);
-      print(`${colors.green}Angriffsmuster erkannt: wiederholte SSH-Fehlversuche.${colors.reset}`);
-    } else if (command === 'blockip') {
-      if (args.length !== 1 || !isValidIp(args[0])) { print(`${colors.orange}blockip: usage: blockip <ipadresse>${colors.reset}`); return false; }
-      appendCodeLine(`[blockip] ufw deny from ${args[0]}`);
-      print(`${colors.green}Firewall-Regel aktiv: ${args[0]} wird verworfen.${colors.reset}`);
-    } else if (command === 'lockserver') {
-      if (args.length !== 1) { print(`${colors.orange}lockserver: usage: lockserver <hostname>${colors.reset}`); return false; }
-      appendCodeLine(`[lockserver] nftables --policy drop --target ${args[0]}`);
-      appendCodeLine(`[lockserver] service web stop --target ${args[0]}`);
-      print(`${colors.orange}${args[0]} wurde in den Notfallmodus versetzt.${colors.reset}`);
-    } else if (command === 'integritycheck') {
-      appendCodeLine('[integritycheck] aide --check --all-servers');
-      print(`${colors.green}Integritaetspruefung abgeschlossen: keine manipulierten Systemdateien gefunden.${colors.reset}`);
-    } else if (command === 'restoreservice') {
-      if (args.length !== 2 || args[1] !== 'web') { print(`${colors.orange}restoreservice: usage: restoreservice <hostname> web${colors.reset}`); return false; }
-      appendCodeLine(`[restoreservice] nftables --policy allow --target ${args[0]}`);
-      appendCodeLine(`[restoreservice] service web start --target ${args[0]}`);
-      print(`${colors.green}Webdienst auf ${args[0]} kontrolliert wiederhergestellt.${colors.reset}`);
-    } else if (command === 'incidentreport') {
-      if (!args.length) { print(`${colors.orange}incidentreport: usage: incidentreport <zusammenfassung>${colors.reset}`); return false; }
-      appendCodeLine(`[incidentreport] reportctl --create --text "${args.join(' ')}"`);
-      print(`${colors.green}Incident-Report gespeichert und an das Security-Team übergeben.${colors.reset}`);
-    }
-    reportGameEvent(command, args);
-    return true;
-  };
   const secureServer = (args) => {
     const [displayMode = 'show'] = args;
     if (args.length > 1 || !['hide', 'show'].includes(displayMode)) {
@@ -1217,11 +1452,14 @@
     reportGameEvent('secureserver', args, { server });
   };
   const resetSimulation = () => {
+    const savedHighscores = localStorage.getItem(highscoreStorageKey);
+    clearPhaseTimer();
     installationTimers.forEach((timer) => window.clearInterval(timer));
     installationTimers.clear();
     pendingInstallations.clear();
     clearAttackTimers();
     localStorage.clear();
+    if (savedHighscores !== null) localStorage.setItem(highscoreStorageKey, savedHighscores);
     infoSafeEntries.length = 0;
     revealedPasswords.clear();
     renderInfoSafe();
@@ -1296,8 +1534,13 @@
   function runApt(session, args) {
     const [action, ...packages] = args;
     const reportAptCommand = () => {
-      const server = activeSshHost && installedServers.find((entry) => entry.hostname === activeSshHost);
-      if (server) reportGameEvent('apt', [action, ...packages], { server });
+      const server = session.hostname && installedServers.find((entry) => entry.hostname === session.hostname);
+      if (!server) return;
+      if (action === 'update') server.packageListsUpdated = true;
+      if (action === 'upgrade') server.osUpgraded = true;
+      if (action === 'install' && packages.includes('admintools') && session.installedPackages.admintools) server.adminToolsInstalled = true;
+      saveServers();
+      reportGameEvent('apt', [action, ...packages], { server });
     };
     if (!action) return writeAptLines(session, ['apt 2.7.14 (amd64)', 'Usage: apt [options] command', '       apt update | upgrade | install <package>']);
     if (action === 'update') {
@@ -1397,7 +1640,7 @@
       if (activeSshHost) {
         print(`${colors.brightGreen}ptux shell${colors.reset} ${colors.dim}:: available commands${colors.reset}`);
         print('');
-        [['help', 'show this command list'], ['ls', 'list directory contents'], ['cd', 'change directory'], ['pwd', 'print working directory'], ['cat', 'print file contents'], ['touch', 'create an empty file'], ['mkdir', 'create a directory'], ['rm', 'remove a file or directory'], ['echo', 'print text'], ['date', 'show local date and time'], ['whoami', 'print current user'], ['uname', 'print system information'], ['ptuxfetch', 'show system summary'], ['history', 'show command history'], ['man', 'open a compact manual'], ['sudo apt', 'update, upgrade or install simulated packages'], ['secureserver', 'activate firewall and fail2ban [hide|show]'], ['ssh', 'connect to a simulated remote server']].forEach(([name, description]) => print(`  ${colors.green}${name.padEnd(10)}${colors.reset} ${description}`));
+        [['help', 'show this command list'], ['ls', 'list directory contents'], ['cd', 'change directory'], ['pwd', 'print working directory'], ['cat', 'print file contents'], ['touch', 'create an empty file'], ['mkdir', 'create a directory'], ['rm', 'remove a file or directory'], ['echo', 'print text'], ['date', 'show local date and time'], ['whoami', 'print current user'], ['uname', 'print system information'], ['ptuxfetch', 'show system summary'], ['history', 'show command history'], ['highscore', 'show phase high scores'], ['stop', 'stop the active phase timer'], ['man', 'open a compact manual'], ['sudo apt', 'update, upgrade or install simulated packages'], ['secureserver', 'activate firewall and fail2ban [hide|show]'], ['ssh', 'connect to a simulated remote server']].forEach(([name, description]) => print(`  ${colors.green}${name.padEnd(10)}${colors.reset} ${description}`));
         return;
       }
       print(`${colors.brightGreen}ptux shell${colors.reset} ${colors.dim}:: available commands${colors.reset}`);
@@ -1416,24 +1659,21 @@
       print(`  ${colors.green}uname${colors.reset}       print system information`);
       print(`  ${colors.green}ptuxfetch${colors.reset}   show system summary`);
       print(`  ${colors.green}history${colors.reset}     show command history`);
+      print(`  ${colors.green}highscore${colors.reset}   show the best times for a phase`);
       print(`  ${colors.green}man${colors.reset}         open a compact manual`);
       print(`  ${colors.green}sudo apt${colors.reset}     update, upgrade or install simulated packages`);
       print(`  ${colors.green}installserver${colors.reset} install a simulated ptuXOS server`);
+      print(`  ${colors.green}start${colors.reset}       reset the simulation and start a phase`);
+      print(`  ${colors.green}stop${colors.reset}        stop a phase timer and continue practicing`);
       print(`  ${colors.green}ssh${colors.reset}         connect to a simulated remote server`);
       print(`  ${colors.green}addsuperuser${colors.reset}  create a simulated sudo user`);
-      print(`  ${colors.green}configserver${colors.reset}   configure SSH and firewall`);
       print(`  ${colors.green}secureserver${colors.reset}  activate firewall and fail2ban [hide|show]`);
-      print(`  ${colors.green}deployservice${colors.reset} start a web or DNS service`);
-      print(`  ${colors.green}startmonitor${colors.reset}  start server monitoring`);
-      print(`  ${colors.green}analyzemonitor${colors.reset} inspect security logs`);
-      print(`  ${colors.green}blockip${colors.reset}       add an IP firewall block`);
-      print(`  ${colors.green}lockserver${colors.reset}   activate emergency lock-down`);
-      print(`  ${colors.green}integritycheck${colors.reset} verify system integrity`);
-      print(`  ${colors.green}restoreservice${colors.reset} restore a service`);
-      print(`  ${colors.green}incidentreport${colors.reset} save an incident report`);
       print(`  ${colors.green}reset simulation${colors.reset} clear the complete simulation state`);
       return;
     }
+    if (command === 'start') return startPhaseCommand(args);
+    if (command === 'stop') return stopPhaseCommand(args);
+    if (command === 'highscore') return showHighscores(args);
     if (command === 'sudo') {
       const utility = args.shift();
       if (utility !== 'apt') return writeAptLines(activeSession, [`sudo: ${utility || 'command'}: command not found`]);
@@ -1443,7 +1683,6 @@
     if (command === 'ssh') return startSshLogin(args);
     if (command === 'secureserver') return secureServer(args);
     if (command === 'addsuperuser') { addSuperuser(args); reportGameEvent(command, args); return; }
-    if (['configserver', 'deployservice', 'startmonitor', 'analyzemonitor', 'blockip', 'lockserver', 'integritycheck', 'restoreservice', 'incidentreport'].includes(command)) { runMetaCommand(command, args); return; }
     if (command === 'pwd') { print(currentDirectory); return; }
     if (command === 'whoami') { print(activeSshHost ? `${activeSshHost}admin` : 'secadmin'); return; }
     if (command === 'hostname') { print(activeSshHost || 'localpc'); return; }
@@ -1515,9 +1754,11 @@
       const hostname = server?.hostname ?? (activeSshHost || 'localpc');
       const user = activeSshHost ? `${activeSshHost}admin` : 'secadmin';
       const kind = activeSshHost ? 'Server' : 'PC';
-      const ip = server?.ip || '0.0.0.0';
-      const mask = server?.mask || '255.255.255.0';
-      const mac = server?.mac || '00:00:00:00:00:00';
+      const network = server || localPcNetwork;
+      const ip = network.ip;
+      const gateway = network.gateway;
+      const mask = network.mask || '255.255.255.0';
+      const mac = network.mac;
       const createdAt = server?.createdAt ?? activeSession?.createdAt ?? Date.now();
       const uptimeMin = Math.max(0, Math.floor((Date.now() - createdAt) / 60000));
       const uptime = uptimeMin < 1 ? '< 1 Minute' : uptimeMin < 60 ? `${uptimeMin} Minuten` : `${Math.floor(uptimeMin / 60)}h ${uptimeMin % 60}m`;
@@ -1546,6 +1787,7 @@
         `${labelColor}Memory${reset}: 128MiB / 512MiB`,
         `${labelColor}Uptime${reset}: ${uptime}`,
         `${labelColor}IP (eth0)${reset}: ${ip} / ${mask}`,
+        `${labelColor}Gateway${reset}: ${gateway}`,
         `${labelColor}MAC (eth0)${reset}: ${mac}`,
       ];
       const rowCount = Math.max(logoLines.length, infoLines.length);
@@ -1589,6 +1831,8 @@
         if (!remoteSession) {
           print(`${colors.orange}Maximal vier Terminal-Tabs sind möglich. Es konnte kein Remote-Tab geöffnet werden.${colors.reset}`);
         } else {
+          server.sshConnected = true;
+          saveServers();
           reportGameEvent('ssh', [credentials.username, server.hostname], { server, authenticated: true });
         }
       } else {
@@ -1757,7 +2001,15 @@
   initializeAppData();
   loadHistory();
   Promise.all([mapDataReady, loadInfoSafe()]).then(() => {
+    const restored = restoreSimulationState();
+    const timerRestored = restorePhaseTimer();
+    window.ptuxGame?.syncServers(installedServers);
+    const gameState = window.ptuxGame?.serialize();
+    if (!timerRestored && gameState?.phaseIndex >= 0 && !gameState.phaseStopped) {
+      window.ptuxGame.reset();
+      saveSimulationState();
+    }
     window.ptuxGame?.start();
-    if (!restoreSimulationState()) boot();
+    if (!restored) boot();
   });
 })();

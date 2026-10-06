@@ -1,6 +1,6 @@
 # ptux shell: Befehle
 
-Der Emulator nutzt xterm.js für die Terminal-Darstellung und eine lokale JavaScript-Simulation für die Shell. Es wird kein echter Prozess gestartet und es werden keine Dateien auf dem Host verändert. Das virtuelle Dateisystem wird beim Neuladen oder über `RESET` zurückgesetzt.
+Der Emulator nutzt xterm.js für die Terminal-Darstellung und eine lokale JavaScript-Simulation für die Shell. Es wird kein echter Prozess gestartet und es werden keine Dateien auf dem Host verändert. Der Simulationszustand bleibt nach einem Neuladen erhalten und wird mit `reset simulation` zurückgesetzt.
 
 ## Navigation und Dateien
 
@@ -27,38 +27,32 @@ Der Emulator nutzt xterm.js für die Terminal-Darstellung und eine lokale JavaSc
 | `whoami` | Gibt den simulierten Benutzer aus: `secadmin`. | `whoami` |
 | `hostname` | Gibt den simulierten Hostnamen aus: `localpc`. | `hostname` |
 | `uname` | Gibt den Kernel-Namen aus; `-a` zeigt zusätzliche Simulationsdaten. | `uname -a` |
-| `ptuxfetch` | Zeigt eine kompakte Systemzusammenfassung. | `ptuxfetch` |
+| `ptuxfetch` | Zeigt eine kompakte Systemzusammenfassung einschließlich simulierter IP, Gateway und MAC-Adresse des aktuellen Rechners. | `ptuxfetch` |
 | `tracert` | Simuliert eine zufällige Offline-Route über Westerstede, IXPs und ein zufälliges Ziel. | `tracert 132.45.32.231` |
 | `which` | Gibt einen simulierten Pfad für einen Befehl aus. | `which ls` |
 | `exit` | Gibt `logout` aus; die Browser-Session bleibt geöffnet. | `exit` |
 | `installserver` | Simuliert die Installation eines ptuXOS-Servers an einem verfügbaren deutschen Rechenzentrum. | `installserver web01 ptuXOS München 51.68.33.30` |
 | `ssh` | Startet eine simulierte SSH-Anmeldung; das Passwort wird verdeckt abgefragt. | `ssh secadmin@web01` |
 | `addsuperuser` | Fügt einen simulierten Benutzer zur sudo-Gruppe hinzu. | `addsuperuser admin geheim` |
-| `configserver` | Richtet Benutzer, SSH und Firewall auf einem installierten Server ein. | `configserver web01` |
-| `deployservice` | Aktiviert einen vorbereiteten Web- oder DNS-Dienst. | `deployservice web01 web` |
-| `startmonitor` | Installiert und startet den Monitoring-Agenten. | `startmonitor web01` |
-| `analyzemonitor` | Liest einen vorbereiteten Auth-Log-Auszug und markiert Angriffsmuster. | `analyzemonitor` |
-| `blockip` | Erstellt eine simulierte Firewall-Sperre für eine IPv4-Adresse. | `blockip 203.0.113.42` |
-| `lockserver` | Versetzt einen Server in den simulierten Notfallmodus. | `lockserver web01` |
-| `integritycheck` | Prüft die Integrität der simulierten Systemdateien. | `integritycheck` |
-| `restoreservice` | Nimmt einen Dienst nach einem Vorfall kontrolliert wieder in Betrieb. | `restoreservice web01 web` |
-| `incidentreport` | Speichert eine kurze Zusammenfassung des Sicherheitsvorfalls. | `incidentreport SSH Angriff eingedämmt` |
+| `start` | Setzt die Simulation zurück und startet eine Phase nach einem zehnsekündigen Countdown. | `start P1` |
+| `stop` | Stoppt den Timer der aktiven Phase, ohne Aufgaben oder Highscore zu löschen; die Phase kann zeitlos weitergespielt werden. | `stop P1` |
+| `highscore` | Zeigt die zehn besten Abschlusszeiten einer Phase. Phasen-IDs werden ohne Beachtung der Groß-/Kleinschreibung erkannt. | `highscore p1` |
 
-## Spielphasen und Meta-Befehle
+## Spielphase
 
-Die Inhalte der Missionen liegen getrennt vom Terminal-Code in `game-data.js`. Jede Phase enthält Aufgaben mit ID, Beschreibung, Hilfe und dem erwarteten Meta-Befehl. `game.js` verwaltet den aktuellen Fortschritt und informiert die ptuX-KI im Panel „PTuX-KI“.
+Die Mission liegt getrennt vom Terminal-Code in `game-data.js`. Sie enthält Aufgaben mit ID, Beschreibung und Hilfe. `game.js` verwaltet den aktuellen Fortschritt und informiert die ptuX-KI im Panel „PTuX-KI“.
 
 Die Aufgaben werden nur durch erfolgreiche Aktionen erfüllt:
 
 | Phase | Aufgaben | Abschlussbedingung |
 | --- | --- | --- |
-| P1 | Drei Server installieren, per SSH anmelden, Server konfigurieren, Dienste bereitstellen, Monitoring starten | 3 Server, erfolgreicher Login mit einem angezeigten Superuser-Konto, 3 Konfigurationen, Web/DNS und 3 Monitoring-Agenten |
-| P2 | Monitoring auswerten, Angriffs-IPs sperren, Server verriegeln | Log-Analyse, 3 definierte IPs blockiert, ein Server im Notfallmodus |
-| P3 | Integrität prüfen, Webdienst wiederherstellen, Vorfall dokumentieren | Prüfung, Wiederherstellung und Incident-Report |
+| P1 | Server installieren, per SSH anmelden, Server absichern und zwei weitere Server einrichten | Mindestens 3 installierte Server mit aktiver Firewall und fail2ban |
 
-Meta-Befehle erzeugen keine echten Prozesse und verändern keinen Host. Der vorbereitete simulierte Script-Aufruf und die Ausgabe werden zeilenweise im Bereich „Code“ angezeigt.
+Die simulierten Admin-Aktionen erzeugen keine echten Prozesse und verändern keinen Host. Script-Aufrufe und Ausgaben werden im Bereich „Code“ angezeigt.
 
-Bei jeder PXE-Installation legt das Installationsskript den Superuser `secadmin` an. Nach der dritten Installation zeigt die ptuX-KI die drei individuellen Zugangspaare einmalig an. Die Passwörter bleiben nur im Arbeitsspeicher der aktuellen Browser-Session und werden nicht in `localStorage` oder der Terminal-History abgelegt. Für P1_A2 meldet man sich mit `ssh secadmin@<hostname>` an und gibt das zugehörige Passwort an der verdeckten Abfrage ein.
+Bei jeder PXE-Installation wird ein Konto `<hostname>admin` angelegt. Die Zugangsdaten werden im Info-Safe gespeichert. Für P1_A2 meldet man sich mit `ssh <hostname>admin@<hostname>` an und gibt das zugehörige Passwort an der verdeckten Abfrage ein.
+
+Nach `start <Phase>` läuft zunächst ein neutraler zehnsekündiger Countdown. Danach beginnt ein dreiminütiger Phasentimer; in der letzten Minute wird er orange, nach Ablauf zählt er rot in der Überzeit weiter. `stop <Phase>` setzt nur den Timer zurück und erhält die aktuelle Aufgabe für zeitloses Üben; dieser Durchlauf wird nicht in den Highscore übernommen. Beim regulären Abschluss wird die Laufzeit als Ergebnis gespeichert. Die zehn schnellsten Ergebnisse jeder Phase bleiben auch nach `reset simulation` im Browser erhalten.
 
 ## Bedienung
 
