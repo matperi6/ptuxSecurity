@@ -3,26 +3,42 @@
   const state = { phaseIndex: -1, taskIndex: 0, phaseStopped: false, completed: new Set(), servers: {} };
   const aiOutput = document.querySelector('#ai-output');
   let phaseCompletionHandler = null;
-  const writeAi = (message) => { if (aiOutput) aiOutput.textContent = message; };
+  let aiOutputTimer = null;
+  const writeAi = (message) => {
+    if (!aiOutput) return;
+    window.clearTimeout(aiOutputTimer);
+    const characters = Array.from(String(message));
+    const outputText = document.createTextNode('');
+    aiOutput.replaceChildren(outputText);
+    let index = 0;
+    const writeNextCharacter = () => {
+      if (index >= characters.length) { aiOutputTimer = null; return; }
+      outputText.appendData(characters[index]);
+      index += 1;
+      aiOutputTimer = window.setTimeout(writeNextCharacter, 3);
+    };
+    writeNextCharacter();
+  };
   const currentPhase = () => phases[state.phaseIndex];
   const currentTask = () => currentPhase()?.tasks[state.taskIndex];
-  const taskProgress = () => `${state.phaseIndex + 1}/${phases.length} | ${state.taskIndex + 1}/${currentPhase()?.tasks.length || 0}`;
+  const taskProgress = () => `Aufgabe: ${state.taskIndex + 1} von ${currentPhase()?.tasks.length || 0}`;
 
-  const renderTask = (prefix = 'Neue Aufgabe') => {
+  const renderTask = (prefix = '', completionTime = '') => {
     if (state.phaseIndex < 0) { writeAi(''); return; }
     const phase = currentPhase();
     const task = currentTask();
     if (!phase || !task) {
-      const finalPhase = phases[phases.length - 1];
-      const finalTask = finalPhase?.tasks[finalPhase.tasks.length - 1];
-      const completion = finalTask && state.completed.has(finalTask.id) ? `${finalTask.id}: Aufgabe erfüllt.\n\n` : '';
-      writeAi(`${completion}Simulation abgeschlossen. Alle Sicherheitsaufgaben wurden erfolgreich bearbeitet.`);
+      const durationMessage = completionTime
+        ? `Du hast dafür ${completionTime} benötigt.`
+        : 'Die Zeit wurde in diesem Durchlauf nicht erfasst.';
+      writeAi(`Alle Aufgaben wurden erfolgreich bearbeitet.\n\n${durationMessage}\n\nDeine besten Zeiten kannst du mit dem Befehl 'highscore p1' anzeigen lassen.`);
       return;
     }
-    writeAi(`${prefix}\n${phase.id}: ${phase.title}\n\n${task.id}: ${task.title}\n${task.description}\n\nHilfe: ${task.hint}\nFortschritt: ${taskProgress()}`);
+    const prefixText = prefix ? `${prefix}\n` : '';
+    writeAi(`${prefixText}Aufgabe ${state.taskIndex + 1}\n${task.description}\n\n${task.hint}\n${taskProgress()}`);
   };
 
-  const completeTask = (message) => {
+  const completeTask = () => {
     const task = currentTask();
     if (!task || state.completed.has(task.id)) return;
     const completedPhase = currentPhase();
@@ -30,8 +46,8 @@
     state.taskIndex += 1;
     const phaseCompleted = state.taskIndex >= completedPhase.tasks.length;
     if (phaseCompleted) { state.phaseIndex += 1; state.taskIndex = 0; }
-    renderTask(`${task.id} erfolgreich abgeschlossen. Die ptuX-KI gibt die nächste Aufgabe frei.${message || ''}`);
-    if (phaseCompleted) phaseCompletionHandler?.(completedPhase.id);
+    const completionTime = phaseCompleted ? phaseCompletionHandler?.(completedPhase.id) : '';
+    renderTask('', completionTime || '');
   };
 
   const evaluatePhaseProgress = () => {
@@ -69,7 +85,13 @@
     state.phaseIndex = phaseIndex;
     state.taskIndex = 0;
     state.phaseStopped = false;
-    renderTask(`Phase ${phases[phaseIndex].id} gestartet.`);
+    renderTask();
+    return true;
+  };
+  const showPhaseIntro = (phaseId) => {
+    const phase = phases.find((entry) => entry.id.toLocaleLowerCase() === String(phaseId).toLocaleLowerCase());
+    if (!phase) return false;
+    writeAi(`${phase.title}\n\n${phase.description || ''}`);
     return true;
   };
   const stopPhase = (phaseId) => {
@@ -131,8 +153,9 @@
     serialize,
     restore,
     syncServers,
-    start: () => renderTask(state.phaseStopped ? 'Übungsmodus ohne Zeitlimit' : 'Neue Aufgabe'),
+    start: () => renderTask(state.phaseStopped ? 'Übungsmodus ohne Zeitlimit' : ''),
     startPhase,
+    showPhaseIntro,
     stopPhase,
     setPhaseCompletionHandler: (handler) => { phaseCompletionHandler = typeof handler === 'function' ? handler : null; },
     reset: () => { state.phaseIndex = -1; state.taskIndex = 0; state.phaseStopped = false; state.completed.clear(); state.servers = {}; renderTask(); },

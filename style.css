@@ -63,12 +63,16 @@ button { cursor: pointer; }
 .panel::after { right: -1px; bottom: -1px; border-right: 2px solid var(--panel-corner); border-bottom: 2px solid var(--panel-corner); }
 .panel h2 { position: absolute; z-index: 3; top: 13px; left: 17px; margin: 0; color: var(--green-bright); font: 500 10px 'DM Mono', monospace; letter-spacing: .16em; text-transform: uppercase; }
 .panel-timer { display: grid; place-items: center; }
+.phase-id { position: absolute; top: 12px; left: 14px; color: var(--green-bright); font: 500 10px 'DM Mono', monospace; }
 .phase-timer { color: #c9d2cc; font: 500 32px/1 'DM Mono', monospace; font-variant-numeric: tabular-nums; }
 .phase-timer[data-state="running"], .phase-timer[data-state="complete"] { color: #b9ef91; }
 .phase-timer[data-state="last-minute"] { color: #ffbd75; }
 .phase-timer[data-state="expired"] { color: #ff9696; }
 .server-info, .code-output { position: absolute; inset: 44px 17px 17px; min-height: 0; overflow: hidden; }
-.ai-output { position: absolute; inset: 44px 17px 17px; margin: 0; overflow-x: hidden; overflow-y: auto; color: var(--ink); font: 12px/1.6 'DM Mono', monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ai-output { position: absolute; inset: 44px 2px 17px 17px; margin: 0; overflow-x: hidden; overflow-y: scroll; scrollbar-width: thin; scrollbar-color: var(--dim) transparent; color: var(--ink); font: 12px/1.6 'DM Mono', monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ai-output::-webkit-scrollbar { width: 6px; }
+.ai-output::-webkit-scrollbar-track { background: transparent; }
+.ai-output::-webkit-scrollbar-thumb { background: var(--dim); }
 .server-info { display: grid; align-content: start; gap: 12px; color: var(--muted); font: 11px/1.45 'DM Mono', monospace; }
 .server-entry { padding-bottom: 10px; border-bottom: 1px solid var(--line); }
 .server-entry > div:first-child { color: var(--ink); white-space: nowrap; }

@@ -8,6 +8,7 @@
   const serverInfo = document.querySelector('#server-info');
   const codeOutput = document.querySelector('#code-output');
   const aiOutput = document.querySelector('#ai-output');
+  const phaseIdOutput = document.querySelector('#phase-id');
   const phaseTimerOutput = document.querySelector('#phase-timer');
   const monitorOutput = document.querySelector('#monitor-output');
   const blockedLogs = document.querySelector('#blocked-logs');
@@ -23,7 +24,7 @@
   const availableDatacentersStorageKey = 'ptuxSecurity.availableDatacenters';
   const phaseTimerStorageKey = 'ptuxSecurity.phaseTimer';
   const highscoreStorageKey = 'ptuxSecurity.highscores';
-  const phaseCountdownMs = 10_000;
+  const phaseCountdownMs = 15_000;
   const defaultPhaseDurationMs = 3 * 60_000;
   let activePhaseRun = null;
   let phaseTimerInterval = null;
@@ -753,6 +754,7 @@
   };
   const serializeOutputLines = (element) => [...element.children].map((line) => ({ text: line.textContent, className: line.className, color: line.style.color }));
   const findPhase = (phaseId) => (window.PTUX_GAME_DATA || []).find((phase) => phase.id.toLocaleLowerCase() === String(phaseId).toLocaleLowerCase());
+  const isPhaseCountdownActive = () => Boolean(activePhaseRun && !activePhaseRun.completed && activePhaseRun.startedAt === null);
   const getPhaseDuration = (phase) => Number.isFinite(phase?.durationSeconds) && phase.durationSeconds > 0
     ? phase.durationSeconds * 1000
     : defaultPhaseDurationMs;
@@ -763,6 +765,7 @@
     return `${minutes}:${seconds}`;
   };
   const renderPhaseTimer = (now = Date.now()) => {
+    if (phaseIdOutput) phaseIdOutput.textContent = activePhaseRun?.phaseId || '';
     if (!phaseTimerOutput) return;
     if (!activePhaseRun) {
       phaseTimerOutput.textContent = '--:--';
@@ -903,6 +906,7 @@
     if (phaseTimerInterval !== null) window.clearInterval(phaseTimerInterval);
     phaseTimerInterval = null;
     renderPhaseTimer(completedAt);
+    return formatTimerValue(elapsedMs, false);
   };
   const showHighscores = (args) => {
     if (args.length !== 1) {
@@ -936,6 +940,7 @@
       return;
     }
     resetSimulation();
+    window.ptuxGame?.showPhaseIntro(phase.id);
     startPhaseCountdown(phase);
     print(`Phase ${phase.id} startet in 10 Sekunden.`);
   };
@@ -1753,7 +1758,6 @@
       const server = installedServers.find((entry) => entry.hostname === activeSshHost);
       const hostname = server?.hostname ?? (activeSshHost || 'localpc');
       const user = activeSshHost ? `${activeSshHost}admin` : 'secadmin';
-      const kind = activeSshHost ? 'Server' : 'PC';
       const network = server || localPcNetwork;
       const ip = network.ip;
       const gateway = network.gateway;
@@ -1778,13 +1782,13 @@
       const infoLines = [
         `${bold}${user}@${hostname}${reset}`,
         '-'.repeat(`${user}@${hostname}`.length),
-        `${labelColor}OS${reset}: ptuXOS 1.04`,
-        `${labelColor}Host${reset}: ptuX Virtual ${kind}`,
-        `${labelColor}Kernel${reset}: 6.8.0-ptuX`,
-        `${labelColor}Shell${reset}: ptuXBash 1.01`,
+        `${labelColor}OS${reset}: ptuXOS 1.042`,
+        `${labelColor}Host${reset}: ${hostname}`,
+        `${labelColor}Kernel${reset}: 7.2.8`,
+        `${labelColor}Shell${reset}: ptuXBash 1.042`,
         `${labelColor}Terminal${reset}: xterm.js`,
         `${labelColor}CPU${reset}: vCPU @ 3.00GHz`,
-        `${labelColor}Memory${reset}: 128MiB / 512MiB`,
+        `${labelColor}Memory${reset}: 1.3 GB / 16 GB`,
         `${labelColor}Uptime${reset}: ${uptime}`,
         `${labelColor}IP (eth0)${reset}: ${ip} / ${mask}`,
         `${labelColor}Gateway${reset}: ${gateway}`,
@@ -1818,6 +1822,7 @@
   }
 
   function submit() {
+    if (isPhaseCountdownActive()) return;
     const commandLine = input.trim();
     terminal.write('\r\n');
     if (pendingSshAuth) {
@@ -1896,6 +1901,7 @@
   }
 
   function handleTerminalData(data) {
+    if (isPhaseCountdownActive()) return;
     if (pendingSshAuth) {
       if (data === '\r') { submit(); return; }
       if (data === '\u0003') { pendingSshAuth = null; pendingSshPassword = ''; terminal.write('^C'); input = ''; cursorIndex = 0; writePrompt(); return; }
@@ -1991,6 +1997,7 @@
   }
 
   document.querySelectorAll('[data-command]').forEach((button) => button.addEventListener('click', () => {
+    if (isPhaseCountdownActive()) return;
     input = button.dataset.command;
     redrawInput();
     submit();
