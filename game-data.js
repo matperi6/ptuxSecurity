@@ -3,7 +3,7 @@
 window.PTUX_GAME_DATA = [
   {
     id: 'P1',
-    title: 'Hallo, ich bin ptuXI, deine Admin-KI.',
+    title: 'Hallo SecAdmin, ich habe eine dringende Aufgabe für dich.',
     description: 'Aufgrund des aktuellen KI-Gesetzes darf ich dich bei dieser Aufgabe nur beraten.\n\nDein erster Auftrag besteht darin, drei Server in verschiedenen deutschen Rechenzentren einzurichten und abzusichern. Dafür hast du 3 Minuten Zeit.',
     briefing: 'Baue eine kleine, erreichbare Serverlandschaft auf und dokumentiere die Grundkonfiguration.',
     tasks: [

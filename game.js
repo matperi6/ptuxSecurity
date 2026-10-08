@@ -19,6 +19,7 @@
     };
     writeNextCharacter();
   };
+  const showWelcome = () => writeAi('Hallo SecAdmin, ich bin ptuXI deine Admin-KI.\n\nTippe "help" im Terminal ein, um dich mit den verfügbaren Befehlen vertraut zu machen.\n\nWenn du bereit bist, kannst du das Admin-Rogue-Game mit "start p1" starten.');
   const currentPhase = () => phases[state.phaseIndex];
   const currentTask = () => currentPhase()?.tasks[state.taskIndex];
   const taskProgress = () => `Aufgabe: ${state.taskIndex + 1} von ${currentPhase()?.tasks.length || 0}`;
@@ -153,6 +154,7 @@
     serialize,
     restore,
     syncServers,
+    showWelcome,
     start: () => renderTask(state.phaseStopped ? 'Übungsmodus ohne Zeitlimit' : ''),
     startPhase,
     showPhaseIntro,

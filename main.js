@@ -939,10 +939,10 @@
       print(`Verfügbare Phasen: ${(window.PTUX_GAME_DATA || []).map((entry) => entry.id).join(', ')}`);
       return;
     }
-    resetSimulation();
+    resetSimulation({ showWelcome: false });
     window.ptuxGame?.showPhaseIntro(phase.id);
     startPhaseCountdown(phase);
-    print(`Phase ${phase.id} startet in 10 Sekunden.`);
+    print(`Phase ${phase.id} startet in 15 Sekunden.`);
   };
   const stopPhaseCommand = (args) => {
     if (args.length !== 1) {
@@ -1456,7 +1456,7 @@
     print(`${colors.green}Firewall und fail2ban auf ${server.hostname} sind aktiv.${colors.reset}`);
     reportGameEvent('secureserver', args, { server });
   };
-  const resetSimulation = () => {
+  const resetSimulation = ({ showWelcome = true } = {}) => {
     const savedHighscores = localStorage.getItem(highscoreStorageKey);
     clearPhaseTimer();
     installationTimers.forEach((timer) => window.clearInterval(timer));
@@ -1492,6 +1492,7 @@
     activeSshHost = '';
     clearRemoteTerminals();
     window.ptuxGame?.reset();
+    if (showWelcome) window.ptuxGame?.showWelcome();
   };
 
   function resolvePath(path = '~') {
@@ -1643,37 +1644,37 @@
     if (command === 'clear') { terminal.clear(); return; }
     if (command === 'help') {
       if (activeSshHost) {
-        print(`${colors.brightGreen}ptux shell${colors.reset} ${colors.dim}:: available commands${colors.reset}`);
+        print(`${colors.brightGreen}ptux shell${colors.reset} ${colors.dim}::verfügbare Befehle${colors.reset}`);
         print('');
-        [['help', 'show this command list'], ['ls', 'list directory contents'], ['cd', 'change directory'], ['pwd', 'print working directory'], ['cat', 'print file contents'], ['touch', 'create an empty file'], ['mkdir', 'create a directory'], ['rm', 'remove a file or directory'], ['echo', 'print text'], ['date', 'show local date and time'], ['whoami', 'print current user'], ['uname', 'print system information'], ['ptuxfetch', 'show system summary'], ['history', 'show command history'], ['highscore', 'show phase high scores'], ['stop', 'stop the active phase timer'], ['man', 'open a compact manual'], ['sudo apt', 'update, upgrade or install simulated packages'], ['secureserver', 'activate firewall and fail2ban [hide|show]'], ['ssh', 'connect to a simulated remote server']].forEach(([name, description]) => print(`  ${colors.green}${name.padEnd(10)}${colors.reset} ${description}`));
+        [['help', 'zeige diese Befehlsliste'], ['ls', 'Verzeichnisinhalt auflisten'], ['cd', 'Verzeichnis wechseln'], ['pwd', 'aktuelles Verzeichnis anzeigen'], ['cat', 'Dateiinhalt anzeigen'], ['touch', 'eine leere Datei erstellen'], ['mkdir', 'ein Verzeichnis erstellen'], ['rm', 'eine Datei oder ein Verzeichnis löschen'], ['echo', 'Text ausgeben'], ['date', 'lokales Datum und Uhrzeit anzeigen'], ['whoami', 'aktuellen Benutzer anzeigen'], ['uname', 'Systeminformationen anzeigen'], ['ptuxfetch', 'Systemübersicht anzeigen'], ['history', 'Befehlsverlauf anzeigen'], ['highscore', 'beste Zeiten für eine Phase anzeigen'], ['stop', 'aktiven Phasentimer stoppen'], ['man', 'kompaktes Handbuch öffnen'], ['sudo apt', 'Pakete aktualisieren, upgraden oder installieren'], ['secureserver', 'Firewall und Fail2ban aktivieren [hide|show]'], ['ssh', 'mit einem entfernten Server verbinden']].forEach(([name, description]) => print(`  ${colors.green}${name.padEnd(10)}${colors.reset} ${description}`));
         return;
       }
-      print(`${colors.brightGreen}ptux shell${colors.reset} ${colors.dim}:: available commands${colors.reset}`);
+      print(`${colors.brightGreen}ptux shell${colors.reset} ${colors.dim}:: verfügbare Befehle${colors.reset}`);
       print('');
-      print(`  ${colors.green}help${colors.reset}       show this command list`);
-      print(`  ${colors.green}ls${colors.reset}         list directory contents`);
-      print(`  ${colors.green}cd${colors.reset}         change directory`);
-      print(`  ${colors.green}pwd${colors.reset}        print working directory`);
-      print(`  ${colors.green}cat${colors.reset}        print file contents`);
-      print(`  ${colors.green}touch${colors.reset}      create an empty file`);
-      print(`  ${colors.green}mkdir${colors.reset}      create a directory`);
-      print(`  ${colors.green}rm${colors.reset}         remove a file or directory`);
-      print(`  ${colors.green}echo${colors.reset}        print text`);
-      print(`  ${colors.green}date${colors.reset}        show local date and time`);
-      print(`  ${colors.green}whoami${colors.reset}      print current user`);
-      print(`  ${colors.green}uname${colors.reset}       print system information`);
-      print(`  ${colors.green}ptuxfetch${colors.reset}   show system summary`);
-      print(`  ${colors.green}history${colors.reset}     show command history`);
-      print(`  ${colors.green}highscore${colors.reset}   show the best times for a phase`);
-      print(`  ${colors.green}man${colors.reset}         open a compact manual`);
-      print(`  ${colors.green}sudo apt${colors.reset}     update, upgrade or install simulated packages`);
-      print(`  ${colors.green}installserver${colors.reset} install a simulated ptuXOS server`);
-      print(`  ${colors.green}start${colors.reset}       reset the simulation and start a phase`);
-      print(`  ${colors.green}stop${colors.reset}        stop a phase timer and continue practicing`);
-      print(`  ${colors.green}ssh${colors.reset}         connect to a simulated remote server`);
-      print(`  ${colors.green}addsuperuser${colors.reset}  create a simulated sudo user`);
-      print(`  ${colors.green}secureserver${colors.reset}  activate firewall and fail2ban [hide|show]`);
-      print(`  ${colors.green}reset simulation${colors.reset} clear the complete simulation state`);
+      print(`  ${colors.green}help${colors.reset}             zeige diese Befehlsliste`);
+      print(`  ${colors.green}ls${colors.reset}               Verzeichnisinhalt auflisten`);
+      print(`  ${colors.green}cd${colors.reset}               Verzeichnis wechseln`);
+      print(`  ${colors.green}pwd${colors.reset}              aktuelles Verzeichnis anzeigen`);
+      print(`  ${colors.green}cat${colors.reset}              Dateiinhalt anzeigen`);
+      print(`  ${colors.green}touch${colors.reset}            eine leere Datei erstellen`);
+      print(`  ${colors.green}mkdir${colors.reset}            ein Verzeichnis erstellen`);
+      print(`  ${colors.green}rm${colors.reset}               eine Datei oder ein Verzeichnis löschen`);
+      print(`  ${colors.green}echo${colors.reset}             Text ausgeben`);
+      print(`  ${colors.green}date${colors.reset}             lokales Datum und Uhrzeit anzeigen`);
+      print(`  ${colors.green}whoami${colors.reset}           aktuellen Benutzer anzeigen`);
+      print(`  ${colors.green}uname${colors.reset}            Systeminformationen anzeigen`);
+      print(`  ${colors.green}ptuxfetch${colors.reset}        Systemübersicht anzeigen`);
+      print(`  ${colors.green}history${colors.reset}          Befehlsverlauf anzeigen`);
+      print(`  ${colors.green}highscore${colors.reset}        Beste Zeiten für eine Phase anzeigen`);
+      print(`  ${colors.green}man${colors.reset}              kompaktes Handbuch öffnen`);
+      print(`  ${colors.green}sudo apt${colors.reset}         Pakete aktualisieren, upgraden oder installieren`);
+      print(`  ${colors.green}installserver${colors.reset}    installiere einen simulierten ptuXOS Server`);
+      print(`  ${colors.green}start${colors.reset}            Simulation zurücksetzen und eine Phase starten`);
+      print(`  ${colors.green}stop${colors.reset}             Phasen-Timer stoppen und weiter üben`);
+      print(`  ${colors.green}ssh${colors.reset}              mit einem entfernten Server verbinden`);
+      print(`  ${colors.green}addsuperuser${colors.reset}     erstelle einen Sudo-Benutzer`);
+      print(`  ${colors.green}secureserver${colors.reset}     Firewall und Fail2ban aktivieren [hide|show]`);
+      print(`  ${colors.green}reset simulation${colors.reset} Simulation vollständig zurücksetzen`);
       return;
     }
     if (command === 'start') return startPhaseCommand(args);
@@ -2017,6 +2018,9 @@
       saveSimulationState();
     }
     window.ptuxGame?.start();
-    if (!restored) boot();
+    if (!restored) {
+      window.ptuxGame?.showWelcome();
+      boot();
+    }
   });
 })();
