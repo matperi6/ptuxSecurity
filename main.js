@@ -755,6 +755,9 @@
   const serializeOutputLines = (element) => [...element.children].map((line) => ({ text: line.textContent, className: line.className, color: line.style.color }));
   const findPhase = (phaseId) => (window.PTUX_GAME_DATA || []).find((phase) => phase.id.toLocaleLowerCase() === String(phaseId).toLocaleLowerCase());
   const isPhaseCountdownActive = () => Boolean(activePhaseRun && !activePhaseRun.completed && activePhaseRun.startedAt === null);
+  const setCountdownCursorHidden = (hidden) => terminalSessions.forEach((session) => {
+    session.terminal.write(hidden ? '\x1b[?25l' : '\x1b[?25h');
+  });
   const getPhaseDuration = (phase) => Number.isFinite(phase?.durationSeconds) && phase.durationSeconds > 0
     ? phase.durationSeconds * 1000
     : defaultPhaseDurationMs;
@@ -838,6 +841,7 @@
     if (phaseTimerInterval !== null) window.clearInterval(phaseTimerInterval);
     phaseTimerInterval = null;
     activePhaseRun = null;
+    setCountdownCursorHidden(false);
     persistPhaseRun();
     renderPhaseTimer();
   };
@@ -846,6 +850,7 @@
     const now = Date.now();
     if (activePhaseRun.startedAt === null && now >= activePhaseRun.countdownEndsAt) {
       activePhaseRun.startedAt = activePhaseRun.countdownEndsAt;
+      setCountdownCursorHidden(false);
       if (!window.ptuxGame?.startPhase(activePhaseRun.phaseId)) {
         clearPhaseTimer();
         return;
@@ -880,6 +885,7 @@
       return false;
     }
     activePhaseRun = { ...saved, phaseId: phase.id };
+    setCountdownCursorHidden(isPhaseCountdownActive());
     renderPhaseTimer();
     if (!activePhaseRun.completed) startPhaseTimerTicker();
     return true;
@@ -892,6 +898,7 @@
       durationMs: getPhaseDuration(phase),
       completed: false,
     };
+    setCountdownCursorHidden(true);
     persistPhaseRun();
     renderPhaseTimer();
     startPhaseTimerTicker();
