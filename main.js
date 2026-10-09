@@ -522,8 +522,8 @@
     sudo: '1.9.15p5-3ubuntu5.1',
   };
   const adminToolsPackages = ['admintools', 'fail2ban', 'nmap', 'rkhunter', 'ufw'];
-  const commandNames = ['addsuperuser', 'cat', 'cd', 'clear', 'date', 'echo', 'exit', 'help', 'highscore', 'history', 'hostname', 'installserver', 'ls', 'man', 'mkdir', 'ptuxfetch', 'pwd', 'reset', 'rm', 'secureserver', 'ssh', 'start', 'stop', 'sudo', 'touch', 'tracert', 'uname', 'whoami', 'which'];
-  const remoteCommands = new Set(['help', 'highscore', 'stop', 'ls', 'cd', 'pwd', 'cat', 'touch', 'mkdir', 'rm', 'echo', 'date', 'whoami', 'uname', 'ptuxfetch', 'history', 'man', 'ssh', 'sudo', 'secureserver']);
+  const commandNames = ['about', 'addsuperuser', 'cat', 'cd', 'clear', 'date', 'echo', 'exit', 'help', 'highscore', 'history', 'hostname', 'installserver', 'ls', 'man', 'mkdir', 'ptuxfetch', 'pwd', 'reset', 'rm', 'secureserver', 'ssh', 'start', 'stop', 'sudo', 'touch', 'tracert', 'uname', 'whoami', 'which'];
+  const remoteCommands = new Set(['about', 'help', 'highscore', 'stop', 'ls', 'cd', 'pwd', 'cat', 'touch', 'mkdir', 'rm', 'echo', 'date', 'whoami', 'uname', 'ptuxfetch', 'history', 'man', 'ssh', 'sudo', 'secureserver']);
   const initialFileSystem = JSON.stringify(fileSystem);
   let currentDirectory = '/home/secadmin';
   let input = '';
@@ -1661,12 +1661,13 @@
       if (activeSshHost) {
         print(`${colors.brightGreen}ptux shell${colors.reset} ${colors.dim}::verfügbare Befehle${colors.reset}`);
         print('');
-        [['help', 'zeige diese Befehlsliste'], ['ls', 'Verzeichnisinhalt auflisten'], ['cd', 'Verzeichnis wechseln'], ['pwd', 'aktuelles Verzeichnis anzeigen'], ['cat', 'Dateiinhalt anzeigen'], ['touch', 'eine leere Datei erstellen'], ['mkdir', 'ein Verzeichnis erstellen'], ['rm', 'eine Datei oder ein Verzeichnis löschen'], ['echo', 'Text ausgeben'], ['date', 'lokales Datum und Uhrzeit anzeigen'], ['whoami', 'aktuellen Benutzer anzeigen'], ['uname', 'Systeminformationen anzeigen'], ['ptuxfetch', 'Systemübersicht anzeigen'], ['history', 'Befehlsverlauf anzeigen'], ['highscore', 'beste Zeiten für eine Phase anzeigen'], ['stop', 'aktiven Phasentimer stoppen'], ['man', 'kompaktes Handbuch öffnen'], ['sudo apt', 'Pakete aktualisieren, upgraden oder installieren'], ['secureserver', 'Firewall und Fail2ban aktivieren [hide|show]'], ['ssh', 'mit einem entfernten Server verbinden']].forEach(([name, description]) => print(`  ${colors.green}${name.padEnd(10)}${colors.reset} ${description}`));
+        [['about', 'Systemkennung anzeigen'], ['help', 'zeige diese Befehlsliste'], ['ls', 'Verzeichnisinhalt auflisten'], ['cd', 'Verzeichnis wechseln'], ['pwd', 'aktuelles Verzeichnis anzeigen'], ['cat', 'Dateiinhalt anzeigen'], ['touch', 'eine leere Datei erstellen'], ['mkdir', 'ein Verzeichnis erstellen'], ['rm', 'eine Datei oder ein Verzeichnis löschen'], ['echo', 'Text ausgeben'], ['date', 'lokales Datum und Uhrzeit anzeigen'], ['whoami', 'aktuellen Benutzer anzeigen'], ['uname', 'Systeminformationen anzeigen'], ['ptuxfetch', 'Systemübersicht anzeigen'], ['history', 'Befehlsverlauf anzeigen'], ['highscore', 'beste Zeiten für eine Phase anzeigen'], ['stop', 'aktiven Phasentimer stoppen'], ['man', 'kompaktes Handbuch öffnen'], ['sudo apt', 'Pakete aktualisieren, upgraden oder installieren'], ['secureserver', 'Firewall und Fail2ban aktivieren [hide|show]'], ['ssh', 'mit einem entfernten Server verbinden']].forEach(([name, description]) => print(`  ${colors.green}${name.padEnd(10)}${colors.reset} ${description}`));
         return;
       }
       print(`${colors.brightGreen}ptux shell${colors.reset} ${colors.dim}:: verfügbare Befehle${colors.reset}`);
       print('');
       print(`  ${colors.green}help${colors.reset}             zeige diese Befehlsliste`);
+      print(`  ${colors.green}about${colors.reset}            Systemkennung anzeigen`);
       print(`  ${colors.green}ls${colors.reset}               Verzeichnisinhalt auflisten`);
       print(`  ${colors.green}cd${colors.reset}               Verzeichnis wechseln`);
       print(`  ${colors.green}pwd${colors.reset}              aktuelles Verzeichnis anzeigen`);
@@ -1707,6 +1708,7 @@
     if (command === 'pwd') { print(currentDirectory); return; }
     if (command === 'whoami') { print(activeSshHost ? `${activeSshHost}admin` : 'secadmin'); return; }
     if (command === 'hostname') { print(activeSshHost || 'localpc'); return; }
+    if (command === 'about') { print('2026 - Pt - MIT'); return; }
     if (command === 'date') { print(new Date().toString()); return; }
     if (command === 'uname') { print(args.includes('-a') ? 'localpc 1.0.0 browser-kernel #1 SMP Web x86_64 GNU/Linux' : 'localpc'); return; }
     if (command === 'echo') { print(args.join(' ')); return; }
