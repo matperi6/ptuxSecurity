@@ -1641,6 +1641,14 @@
 
   function execute(commandLine) {
     if (!activeSshHost && commandLine.trim().toLowerCase() === 'reset simulation') { resetSimulation(); return; }
+    if (commandLine.includes('&&')) {
+      if (!/^sudo\s+apt\s+update\s*&&\s*sudo\s+apt\s+upgrade$/i.test(commandLine)) {
+        print(`${colors.orange}bash: unterstützte Kombination: sudo apt update && sudo apt upgrade${colors.reset}`);
+        return;
+      }
+      const session = activeSession;
+      return runApt(session, ['update']).then(() => runApt(session, ['upgrade']));
+    }
     const args = parseArgs(commandLine);
     const command = args.shift();
     if (!command) return;

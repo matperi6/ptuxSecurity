@@ -24,6 +24,13 @@
   const currentTask = () => currentPhase()?.tasks[state.taskIndex];
   const taskProgress = () => `Aufgabe: ${state.taskIndex + 1} von ${currentPhase()?.tasks.length || 0}`;
 
+  const hasCompletedSecuritySetup = (server) => server.aptUpdateCompleted === true
+    && server.aptUpgradeAfterUpdate === true
+    && server.adminToolsInstalledAfterUpdates === true
+    && server.securedAfterAdminTools === true
+    && server.firewallActive === true
+    && server.fail2banActive === true;
+
   const renderTask = (prefix = '', completionTime = '') => {
     if (state.phaseIndex < 0) { writeAi(''); return; }
     const phase = currentPhase();
@@ -57,8 +64,8 @@
     const requirements = {
       P1_A1: servers.length >= 1,
       P1_A2: servers.some((server) => server.sshConnected),
-      P1_A3: servers.some((server) => server.firewallActive && server.fail2banActive),
-      P1_A4: servers.filter((server) => server.firewallActive && server.fail2banActive).length >= 3,
+      P1_A3: servers.some(hasCompletedSecuritySetup),
+      P1_A4: servers.filter(hasCompletedSecuritySetup).length >= 3,
     };
     while (currentTask() && requirements[currentTask().id]) {
       completeTask();
@@ -69,6 +76,7 @@
     state.servers = Object.fromEntries(servers
       .filter((server) => server && typeof server.hostname === 'string')
       .map((server) => [server.hostname, {
+        ...state.servers[server.hostname],
         hostname: server.hostname,
         sshConnected: server.sshConnected === true,
         packageListsUpdated: server.packageListsUpdated === true,
@@ -106,8 +114,35 @@
     if (!event || event.type === 'reset') return;
     const { server, command, authenticated } = event;
     if (server && typeof server.hostname === 'string') {
+      const trackedServer = state.servers[server.hostname] || {};
+      if (command === 'apt') {
+        const [action, ...args] = event.args || [];
+        if (action === 'update') {
+          Object.assign(trackedServer, {
+            aptUpdateCompleted: true,
+            aptUpgradeAfterUpdate: false,
+            adminToolsInstalledAfterUpdates: false,
+            securedAfterAdminTools: false,
+          });
+        } else if (action === 'upgrade') {
+          Object.assign(trackedServer, {
+            aptUpgradeAfterUpdate: trackedServer.aptUpdateCompleted === true,
+            adminToolsInstalledAfterUpdates: false,
+            securedAfterAdminTools: false,
+          });
+        } else if (action === 'install' && args.includes('admintools')) {
+          Object.assign(trackedServer, {
+            adminToolsInstalledAfterUpdates: trackedServer.aptUpdateCompleted === true
+              && trackedServer.aptUpgradeAfterUpdate === true
+              && server.adminToolsInstalled === true,
+            securedAfterAdminTools: false,
+          });
+        }
+      } else if (command === 'secureserver') {
+        trackedServer.securedAfterAdminTools = trackedServer.adminToolsInstalledAfterUpdates === true;
+      }
       state.servers[server.hostname] = {
-        ...(state.servers[server.hostname] || {}),
+        ...trackedServer,
         hostname: server.hostname,
         sshConnected: server.sshConnected === true || (command === 'ssh' && authenticated === true),
         packageListsUpdated: server.packageListsUpdated === true,
@@ -139,6 +174,10 @@
     state.servers = saved.servers && !Array.isArray(saved.servers) && typeof saved.servers === 'object'
       ? Object.fromEntries(Object.entries(saved.servers).map(([hostname, server]) => [hostname, {
         hostname,
+        aptUpdateCompleted: server?.aptUpdateCompleted === true,
+        aptUpgradeAfterUpdate: server?.aptUpgradeAfterUpdate === true,
+        adminToolsInstalledAfterUpdates: server?.adminToolsInstalledAfterUpdates === true,
+        securedAfterAdminTools: server?.securedAfterAdminTools === true,
         sshConnected: server?.sshConnected === true,
         packageListsUpdated: server?.packageListsUpdated === true,
         osUpgraded: server?.osUpgraded === true,
